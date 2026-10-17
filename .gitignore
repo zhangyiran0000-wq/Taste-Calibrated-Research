@@ -1,0 +1,23 @@
+# Runs, caches and example outputs
+runs/
+.tastecal_cache/
+examples/
+
+# Personal: your taste profiles, ratings and papers
+taste.json
+taste.md
+profiles/
+papers/
+
+# Personal run files and backups
+RUN-*.md
+run-*.cmd
+*.zip
+docs/intention-v1.md
+docs/intention.v1.md
+
+# Python and OS
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" width="1000" height="250" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#64748b"/>
+    </marker>
+    <marker id="t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#0d9488"/>
+    </marker>
+  </defs>
+  <rect x="0.5" y="0.5" width="999" height="249" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+
+  <g font-size="15" font-weight="600" fill="#0f172a" text-anchor="middle">
+    <g stroke="#cbd5e1" fill="#f8fafc">
+      <rect x="32" y="40" width="136" height="76" rx="10"/>
+      <rect x="192" y="40" width="136" height="76" rx="10"/>
+      <rect x="352" y="40" width="136" height="76" rx="10"/>
+      <rect x="512" y="40" width="136" height="76" rx="10"/>
+      <rect x="672" y="40" width="136" height="76" rx="10" fill="#f0fdfa" stroke="#5eead4"/>
+      <rect x="832" y="40" width="136" height="76" rx="10"/>
+    </g>
+    <text x="100" y="73">Seed</text>
+    <text x="260" y="73">Grow</text>
+    <text x="420" y="73">Synthesize</text>
+    <text x="580" y="73">Judge</text>
+    <text x="740" y="73" fill="#0f766e">Calibrate</text>
+    <text x="900" y="73">Report</text>
+  </g>
+  <g font-size="12" fill="#64748b" text-anchor="middle">
+    <text x="100" y="95">one paper</text>
+    <text x="260" y="95">along problems</text>
+    <text x="420" y="95">threads · forces</text>
+    <text x="580" y="95">gates · blind audit</text>
+    <text x="740" y="95" fill="#0f766e">to your ratings</text>
+    <text x="900" y="95">one HTML file</text>
+  </g>
+  <g font-size="11" font-weight="600" fill="#94a3b8">
+    <text x="42" y="56">1</text><text x="202" y="56">2</text><text x="362" y="56">3</text>
+    <text x="522" y="56">4</text><text x="682" y="56" fill="#14b8a6">5</text><text x="842" y="56">6</text>
+  </g>
+
+  <g stroke="#64748b" stroke-width="1.5" marker-end="url(#a)">
+    <line x1="170" y1="78" x2="189" y2="78"/>
+    <line x1="330" y1="78" x2="349" y2="78"/>
+    <line x1="490" y1="78" x2="509" y2="78"/>
+    <line x1="650" y1="78" x2="669" y2="78"/>
+    <line x1="810" y1="78" x2="829" y2="78"/>
+  </g>
+
+  <rect x="560" y="164" width="260" height="52" rx="10" fill="#f0fdfa" stroke="#5eead4"/>
+  <text x="690" y="186" font-size="14" font-weight="600" fill="#0f766e" text-anchor="middle">taste.json</text>
+  <text x="690" y="204" font-size="12" fill="#0f766e" text-anchor="middle">your profile + papers you rated</text>
+
+  <g stroke="#0d9488" stroke-width="1.5" fill="none" marker-end="url(#t)">
+    <path d="M600 162V119"/>
+    <path d="M740 162V119"/>
+    <path d="M900 118V190H823" stroke-dasharray="5 4"/>
+  </g>
+  <text x="831" y="209" font-size="12" fill="#0f766e">rate as you read</text>
+</svg>

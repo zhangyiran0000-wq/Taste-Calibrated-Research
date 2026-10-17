@@ -1,0 +1,26 @@
+{
+  "default": "mine",
+  "profiles": {
+    "mine": {
+      "title": "Mine",
+      "taste": "Problems I care about: ...\nIdeas I like: ...\nIdeas I usually skip: ...",
+      "papers": [
+        {
+          "ref": "Deep Residual Learning for Image Recognition",
+          "score": 0.9,
+          "comment": "one simple idea, a clear reason, reused everywhere"
+        },
+        {
+          "ref": "https://arxiv.org/abs/2306.13812",
+          "score": 0.7,
+          "comment": "opens a real problem others build on"
+        },
+        {
+          "ref": "A paper you found decorated",
+          "score": 0.2,
+          "comment": "big claims, gains come from extra tuning"
+        }
+      ]
+    }
+  }
+}

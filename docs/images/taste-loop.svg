@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 270" width="1000" height="270" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#64748b"/>
+    </marker>
+    <marker id="t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#0d9488"/>
+    </marker>
+  </defs>
+  <rect x="0.5" y="0.5" width="999" height="269" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+
+  <g stroke="#cbd5e1" fill="#f8fafc">
+    <rect x="38" y="40" width="164" height="92" rx="10" fill="#f0fdfa" stroke="#5eead4"/>
+    <rect x="228" y="40" width="164" height="92" rx="10"/>
+    <rect x="418" y="40" width="164" height="92" rx="10" fill="#f0fdfa" stroke="#5eead4"/>
+    <rect x="608" y="40" width="164" height="92" rx="10"/>
+    <rect x="798" y="40" width="164" height="92" rx="10"/>
+  </g>
+  <g font-size="15" font-weight="600" fill="#0f172a" text-anchor="middle">
+    <text x="120" y="72" fill="#0f766e">You rate papers</text>
+    <text x="310" y="72">Blind audit</text>
+    <text x="500" y="72" fill="#0f766e">Your scale</text>
+    <text x="690" y="72">Taste check</text>
+    <text x="880" y="72">Reading order</text>
+  </g>
+  <g font-size="12" fill="#64748b" text-anchor="middle">
+    <text x="120" y="96" fill="#0f766e">1–5, any paper</text>
+    <text x="120" y="114" fill="#0f766e">kept in taste.json</text>
+    <text x="310" y="96">scored like any work</text>
+    <text x="310" y="114">never sees your rating</text>
+    <text x="500" y="96" fill="#0f766e">blind score fit</text>
+    <text x="500" y="114" fill="#0f766e">to your ratings</text>
+    <text x="690" y="96">each rating held out:</text>
+    <text x="690" y="114">does the profile agree?</text>
+    <text x="880" y="96">by your scale,</text>
+    <text x="880" y="114">else by taste score</text>
+  </g>
+
+  <g stroke="#64748b" stroke-width="1.5" marker-end="url(#a)">
+    <line x1="204" y1="86" x2="225" y2="86"/>
+    <line x1="394" y1="86" x2="415" y2="86"/>
+    <line x1="584" y1="86" x2="605" y2="86"/>
+    <line x1="774" y1="86" x2="795" y2="86"/>
+  </g>
+  <path d="M880 134V176H120V137" fill="none" stroke="#0d9488" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#t)"/>
+  <text x="500" y="196" font-size="12" fill="#0f766e" text-anchor="middle">rate more as you read: the next run fits tighter</text>
+
+  <line x1="38" y1="222" x2="962" y2="222" stroke="#e2e8f0"/>
+  <text x="38" y="246" font-size="12.5" fill="#475569">Taste never changes the evidence. Gate verdicts and the blind score stay as they are; your scale is shown beside them.</text>
+</svg>

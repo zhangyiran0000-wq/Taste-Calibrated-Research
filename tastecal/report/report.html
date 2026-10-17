@@ -1,0 +1,1769 @@
+<title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&family=Overpass+Mono:wght@400;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+/* Layout: a transit-map report. Reading column for the mechanism, a full-bleed
+   swimlane map where each problem thread is a coloured line and works are stations,
+   then thread rows whose why-ladders reuse the same line-and-station grammar. */
+:root{
+  --bg:#f4f6f8; --surface:#ffffff; --surface-2:#eceff3; --ink:#14171d; --ink-2:#3f4652; --muted:#5f6774;
+  --hair:#d8dde5; --edge:#2a2f38; --challenge:#c4373b; --focus:#2a78d6; --ok:#0f7a2e; --warn:#a15c00;
+  --l1:#2a78d6; --l2:#eb6834; --l3:#1baf7a; --l4:#eda100; --l5:#e87ba4; --l6:#6250d6;
+  --f-display:"Overpass",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Source Serif 4","Iowan Old Style",Georgia,serif;
+  --f-mono:"Overpass Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --shadow:0 12px 40px rgba(20,23,29,.14);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d1015; --surface:#151920; --surface-2:#1c212a; --ink:#e8ebf0; --ink-2:#bcc3ce; --muted:#8f98a6;
+    --hair:#2a313c; --edge:#c9cfd9; --challenge:#ee6d6d; --focus:#6da7ec; --ok:#3fc463; --warn:#e3a43a;
+    --l1:#3987e5; --l2:#d95926; --l3:#199e70; --l4:#c98500; --l5:#d55181; --l6:#9085e9;
+    --shadow:0 12px 40px rgba(0,0,0,.5); color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0d1015; --surface:#151920; --surface-2:#1c212a; --ink:#e8ebf0; --ink-2:#bcc3ce; --muted:#8f98a6;
+  --hair:#2a313c; --edge:#c9cfd9; --challenge:#ee6d6d; --focus:#6da7ec; --ok:#3fc463; --warn:#e3a43a;
+  --l1:#3987e5; --l2:#d95926; --l3:#199e70; --l4:#c98500; --l5:#d55181; --l6:#9085e9;
+  --shadow:0 12px 40px rgba(0,0,0,.5); color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-display);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.wrap{max-width:1200px;margin-inline:auto;padding-inline:clamp(16px,4vw,40px)}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0}
+h1{font-size:clamp(34px,5.4vw,62px);line-height:1.02;font-weight:800;letter-spacing:-.025em;max-width:20ch}
+h2{font-size:clamp(24px,3vw,32px);line-height:1.1;font-weight:800;letter-spacing:-.015em}
+h3{font-size:19px;line-height:1.25;font-weight:700}
+p{margin:0}
+.eyebrow,.kicker{font:600 12px/1.3 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.serif{font-family:var(--f-body)}
+section{padding-block:64px 0}
+.sec-head{display:grid;gap:10px;margin-bottom:28px;max-width:760px}
+.sec-head p{font-family:var(--f-body);font-size:17px;color:var(--ink-2)}
+
+/* masthead */
+.masthead{padding-block:56px 0;display:grid;gap:18px}
+.lede{font-family:var(--f-body);font-size:clamp(17px,1.6vw,20px);line-height:1.5;color:var(--ink-2);max-width:62ch}
+.facts{display:flex;flex-wrap:wrap;gap:6px 18px;font:600 13px var(--f-mono);color:var(--ink-2);font-variant-numeric:tabular-nums}
+.facts span{white-space:nowrap}
+.runnote{font-size:13px;color:var(--muted);max-width:80ch;border-left:3px solid var(--hair);padding-left:12px}
+.routes{display:grid;gap:3px;margin-top:10px}
+.routes i{display:block;height:4px;border-radius:2px}
+.toc{display:flex;flex-wrap:wrap;gap:6px}
+.toc a{font:600 13px var(--f-display);text-decoration:none;padding:6px 12px;border:1px solid var(--hair);border-radius:999px;background:var(--surface)}
+.toc a:hover{border-color:var(--ink-2)}
+
+/* mechanism */
+.equation{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1.25fr) auto minmax(0,1.3fr);gap:14px;align-items:start}
+.eq-cell{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:20px;display:grid;gap:10px;align-content:start;min-width:0}
+.eq-cell p,.eq-cell li{font-family:var(--f-body);font-size:16px;line-height:1.5}
+.eq-cell ul{margin:0;padding:0;list-style:none;display:grid;gap:12px}
+.eq-cell li{display:grid;gap:6px}
+.eq-cell li .chips{display:flex;flex-wrap:wrap;gap:4px}
+.eq-op{display:grid;place-items:center;align-self:center;font:600 12px var(--f-mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;writing-mode:vertical-rl;transform:rotate(180deg)}
+.forces-h{margin:40px 0 14px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.forces{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px}
+.force{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:20px;display:grid;gap:12px;align-content:start}
+.force-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.fid{font:800 13px var(--f-mono);color:var(--ink)}
+.root-tag{font:600 11px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);border:1px solid var(--hair);border-radius:999px;padding:3px 9px}
+.force h3{font-size:21px}
+.force p{font-family:var(--f-body);font-size:15.5px;color:var(--ink-2)}
+.tchips{display:flex;flex-wrap:wrap;gap:6px}
+.drivers{margin-top:26px;display:grid;gap:10px}
+.drivers ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:10px 18px}
+.drivers li{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:baseline;align-content:start;font-size:14px;color:var(--ink-2)}
+.drivers .yr{font:600 13px var(--f-mono);color:var(--ink)}
+.drivers .chips{grid-column:2;display:flex;flex-wrap:wrap;gap:4px}
+
+/* chips */
+.mention,.tchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hair);background:var(--surface);border-radius:999px;padding:1px 9px 1px 6px;font:700 12.5px/1.6 var(--f-display);cursor:pointer;vertical-align:baseline;white-space:nowrap}
+.mention i{width:9px;height:9px;border-radius:50%;border:2.5px solid var(--c);background:var(--surface);flex:none}
+.tchip i{width:16px;height:4px;border-radius:2px;background:var(--c);flex:none}
+.mention:hover,.tchip:hover{border-color:var(--ink-2)}
+.tchip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.tchip.ghost{background:transparent}
+
+/* map */
+.mapsec{padding-top:72px}
+.map-controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin-top:18px}
+.ctl-group{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ctl-label{font:600 11px var(--f-mono);text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-right:2px}
+.tog{display:inline-flex;align-items:center;gap:7px;padding:4px 10px;border-radius:999px;border:1px solid var(--hair);background:var(--surface);font:600 12.5px var(--f-display);cursor:pointer}
+.tog[aria-pressed="false"]{opacity:.5;text-decoration:line-through}
+.tog svg{flex:none}
+.seg{display:inline-flex;border:1px solid var(--hair);border-radius:999px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;padding:5px 12px;font:600 12.5px var(--f-display);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.legend-shapes{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--ink-2);align-items:center}
+.legend-shapes span{display:inline-flex;align-items:center;gap:6px}
+.focusbar{min-height:26px;margin-top:10px;font-size:13px;color:var(--ink-2);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.focusbar button{border:0;background:none;text-decoration:underline;cursor:pointer;padding:0;font-weight:600}
+.mapframe{margin-top:8px;border-block:1px solid var(--hair);background:var(--surface);position:relative}
+.mapframe::after{content:"";position:absolute;top:0;bottom:0;right:0;width:56px;pointer-events:none;opacity:0;transition:opacity .2s;z-index:2;background:linear-gradient(270deg,var(--surface),transparent)}
+.mapframe.more-right::after{opacity:1}
+.mapsec.list .mapframe::after{display:none}
+.scrollhint{font:600 12px var(--f-mono);color:var(--muted)}
+.mapscroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+.mapinner{position:relative}
+#mapsvg{display:block;touch-action:pan-x pan-y}
+.lanelabels{position:absolute;inset:0;pointer-events:none}
+.lrow{position:absolute;left:0;pointer-events:none}
+.lane-chip{position:sticky;left:10px;pointer-events:auto;display:inline-flex;align-items:center;gap:7px;padding:3px 10px 3px 8px;border-radius:999px;border:1px solid var(--hair);background:color-mix(in srgb,var(--surface) 88%,transparent);font:700 12.5px var(--f-display);cursor:pointer;backdrop-filter:blur(2px)}
+.lane-chip i{width:16px;height:5px;border-radius:3px;background:var(--c)}
+.lane-chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.force-row .ftag{position:sticky;left:10px;display:inline-block;font:600 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:color-mix(in srgb,var(--surface) 88%,transparent);padding:2px 4px}
+.yr-line{stroke:var(--hair);stroke-width:1}
+.yr-label{font:600 12px var(--f-mono);fill:var(--muted)}
+.lane-sep{stroke:var(--hair);stroke-width:1;stroke-dasharray:2 4}
+.rail{fill:none;stroke-width:5;stroke-linecap:round;opacity:.92;transition:opacity .15s}
+.edge-g{transition:opacity .15s}
+.edge{fill:none;stroke:var(--edge);opacity:.58}
+.edge.challenge{stroke:var(--challenge);opacity:.85}
+.edge-g.hl .edge{opacity:1}
+#mapsvg.dense .edge{opacity:.36}
+#mapsvg.dense .edge.challenge{opacity:.6}
+#mapsvg.dense .edge-g.hl .edge{opacity:1}
+.edge-hit{fill:none;stroke:transparent;stroke-width:12;cursor:pointer}
+.mk{fill:var(--edge)} .mk-open{fill:none;stroke:var(--edge);stroke-width:1.5}
+.mk-tee{fill:none;stroke:var(--challenge);stroke-width:2.2}
+.st{cursor:pointer;transition:opacity .15s}
+.st .mark{fill:var(--surface);stroke:var(--c);stroke-width:3}
+.st .core{fill:var(--c)}
+.st.r-driver .mark{stroke-dasharray:3 2.6}
+.st text{paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round}
+.st .nm{font:700 12.5px var(--f-display);fill:var(--ink)}
+.st .dt{font:400 10.5px var(--f-mono);fill:var(--muted)}
+.st:hover .mark,.st:focus-visible .mark{stroke-width:4.5}
+.st:focus{outline:none}
+.st:focus-visible .mark{stroke:var(--focus)}
+.st.sel .mark{fill:var(--c)}
+.st .halo{fill:none;stroke:var(--warn);stroke-width:2;stroke-dasharray:3 3}
+.st.folded{opacity:.6}
+.st.folded .mark{stroke-dasharray:2.5 2.5}
+.st.fv-not .dt{fill:var(--challenge)}
+.fold-why{border-left:3px solid var(--challenge);padding:4px 0 4px 12px;display:grid;gap:4px;margin-top:8px}
+.fold-why.inc{border-color:var(--muted)}
+.fold-why b{font:600 11px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.fold-why p{font-family:var(--f-body);font-size:15px;line-height:1.45;color:var(--ink)}
+.fold-why ul{margin:2px 0 0;padding-left:18px;display:grid;gap:4px;font-size:14px;color:var(--ink-2)}
+.fl ul.evid{list-style:disc;margin:2px 0 0;padding-left:18px;gap:3px}
+.fl ul.evid li{display:list-item;padding:0;border:0;font-size:13.5px;line-height:1.45;color:var(--ink-2)}
+.lane-tags{position:sticky;left:10px;display:inline-flex;gap:6px;align-items:center;pointer-events:none}
+.lane-tags .lane-chip{position:static}
+.fold-chip{pointer-events:auto;display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;border:1px dashed var(--muted);background:color-mix(in srgb,var(--surface) 88%,transparent);font:600 12px var(--f-display);color:var(--ink-2);cursor:pointer;backdrop-filter:blur(2px)}
+.fold-chip:hover{border-color:var(--ink-2);color:var(--ink)}
+.fold-chip[aria-pressed="true"]{border-style:solid;color:var(--ink)}
+.seed .capsule{fill:var(--surface);stroke:var(--ink);stroke-width:3.5}
+.seed .cap-dot{stroke:var(--surface);stroke-width:2}
+.seed.sel .capsule{fill:var(--surface-2)}
+.seed-pill rect{fill:var(--ink)}
+.seed-pill text{font:700 11.5px var(--f-mono);fill:var(--bg);letter-spacing:.04em;paint-order:normal;stroke:none}
+.dim{opacity:.12}
+.listview{display:none}
+.mapsec.list .mapscroll{display:none}
+.mapsec.list .listview{display:block}
+.mapsec.list #t-fit{display:none}
+.listview .tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{font:600 11px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:10px 12px;border-bottom:1px solid var(--hair);white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid var(--hair);vertical-align:top}
+td.num,.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody tr:hover{background:var(--surface-2)}
+.wtitle{font-weight:700}
+.wsub{color:var(--muted);font-size:13px}
+
+/* tooltip */
+.tip{position:fixed;z-index:60;max-width:320px;background:var(--ink);color:var(--bg);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.45;pointer-events:none;box-shadow:var(--shadow)}
+.tip b{font-size:14px}
+.tip .tm{font:400 11.5px var(--f-mono);opacity:.75;display:block;margin-bottom:4px}
+
+/* drawer */
+.drawer{position:fixed;z-index:50;top:0;right:0;bottom:0;width:min(460px,100%);background:var(--surface);border-left:1px solid var(--hair);box-shadow:var(--shadow);overflow-y:auto;padding:22px 24px calc(28px + env(safe-area-inset-bottom,0px))}
+.dr-top{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.pill{font:600 11px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--hair);border-radius:999px;padding:2px 9px;color:var(--ink-2)}
+.dr-close{margin-left:auto;border:1px solid var(--hair);background:var(--surface);border-radius:999px;width:34px;height:34px;font-size:20px;line-height:1;cursor:pointer}
+.dr-date{margin-top:14px;font:600 12.5px var(--f-mono);color:var(--muted)}
+.dr-title{font-size:22px;line-height:1.2;margin-top:6px}
+.dr-auth{color:var(--ink-2);font-size:14px;margin-top:4px}
+.dr-sum{font-family:var(--f-body);font-size:17px;line-height:1.5;margin-top:14px}
+.card3{margin:18px 0 0;padding:0;display:grid;gap:0;position:relative}
+.card3::before{content:"";position:absolute;left:6px;top:10px;bottom:10px;width:3px;background:var(--c);border-radius:2px}
+.card3 div{position:relative;padding:0 0 14px 26px}
+.card3 div::before{content:"";position:absolute;left:0;top:4px;width:15px;height:15px;border-radius:50%;background:var(--surface);border:3px solid var(--c);box-sizing:border-box}
+.card3 dt{font:600 11px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.card3 dd{margin:3px 0 0;font-family:var(--f-body);font-size:15px;line-height:1.5}
+.card3 ul{margin:0;padding-left:18px}
+.drawer h3{font-size:14px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:22px 0 10px;font-weight:600}
+.rels{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.rel{border:1px solid var(--hair);border-radius:10px;padding:12px;display:grid;gap:6px}
+.rel-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rtype{display:inline-flex;align-items:center;gap:6px;font:600 11.5px var(--f-mono);text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2)}
+.rtype.t-challenges{color:var(--challenge)}
+.rel-label{font-size:14px}
+.rel blockquote{margin:0;font-family:var(--f-body);font-style:italic;font-size:14.5px;color:var(--ink-2);border-left:3px solid var(--hair);padding-left:10px}
+.rel .para{font-size:13.5px;color:var(--ink-2)}
+.rel-meta{font:400 11.5px var(--f-mono);color:var(--muted)}
+.probs-dr{list-style:none;margin:0;padding:0;display:grid;gap:8px;font-size:14px}
+.src{display:inline-block;margin-top:22px;font-weight:700}
+
+/* threads */
+.threadrows{display:grid;gap:18px}
+.thread{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:24px;display:grid;grid-template-columns:minmax(0,290px) minmax(0,1fr);gap:20px 34px}
+.th-meta{display:grid;gap:8px;align-content:start}
+.th-kicker{display:flex;align-items:center;gap:8px;font:600 11.5px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.th-kicker .sw{width:22px;height:5px;border-radius:3px;background:var(--c)}
+.th-q{font-family:var(--f-body);font-size:18px;line-height:1.35}
+.th-note{font-size:13.5px;color:var(--ink-2)}
+.status{display:inline-flex;align-items:center;gap:6px;font:600 11px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;padding:3px 9px;border-radius:999px;border:1px solid currentColor}
+.status::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.status.ok{color:var(--ok)} .status.active{color:var(--warn)} .status.open{color:var(--challenge)}
+.ladder{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(var(--n,4),minmax(0,1fr));position:relative;align-self:start}
+.ladder::before{content:"";position:absolute;left:8px;right:12px;top:9px;height:4px;background:var(--c);border-radius:2px}
+.rung{position:relative;padding:30px 18px 0 0;min-width:0}
+.rung::before{content:"";position:absolute;left:0;top:3px;width:17px;height:17px;border-radius:50%;background:var(--surface);border:3.5px solid var(--c);box-sizing:border-box}
+.rung.k-root::before{width:23px;height:23px;top:0;left:-3px;border:4.5px solid var(--ink)}
+.rk{font:600 11px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.rung p{font-family:var(--f-body);font-size:15px;line-height:1.5;margin-top:5px}
+.rung.k-root p{font-weight:600;color:var(--ink)}
+.probs{grid-column:1/-1;border-top:1px solid var(--hair);padding-top:12px}
+.probs summary{cursor:pointer;font:600 13px var(--f-display);color:var(--ink-2)}
+.probs ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:10px}
+.probs li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;font-size:14px}
+.ps{font:600 10.5px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:999px;border:1px solid currentColor;align-self:start;margin-top:2px}
+.ps.open{color:var(--challenge)} .ps.addressed{color:var(--ok)} .ps.claimed{color:var(--warn);border-style:dashed}
+.pwho{grid-column:2;color:var(--muted);font-size:13px;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+
+/* story */
+.storygrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,360px);gap:48px;align-items:start}
+.prose p{font-family:var(--f-body);font-size:18px;line-height:1.65;max-width:66ch;margin-bottom:1.1em;color:var(--ink)}
+.prose .mention{font-size:13px}
+.aside-block{display:grid;gap:12px;margin-bottom:30px}
+.ko{list-style:none;margin:0;padding:0;display:grid;gap:14px}
+.ko li{display:grid;gap:6px;padding-bottom:14px;border-bottom:1px solid var(--hair)}
+.ko-path{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.ko p{font-size:14px;color:var(--ink-2)}
+.ko .via{font:400 12px var(--f-mono);color:var(--muted);display:flex;gap:6px;align-items:center}
+.openp{margin:0;padding-left:20px;display:grid;gap:8px;font-family:var(--f-body);font-size:15.5px}
+
+/* check + method */
+.checkgrid{display:grid;grid-template-columns:minmax(0,260px) minmax(0,1fr);gap:28px;align-items:start}
+.cover{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:20px;display:grid;gap:8px}
+.cover .big{font:800 44px/1 var(--f-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.cover p{font-size:14px;color:var(--ink-2)}
+.tablecard{background:var(--surface);border:1px solid var(--hair);border-radius:12px;overflow-x:auto}
+.hit{font:600 11px var(--f-mono);color:var(--ok);text-transform:uppercase;letter-spacing:.05em}
+.miss{font:600 11px var(--f-mono);color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.note{margin-top:14px;font-size:13.5px;color:var(--muted);max-width:90ch}
+.steps{list-style:none;margin:0 0 30px;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:12px;counter-reset:s}
+.steps li{counter-increment:s;background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:16px;display:grid;gap:6px;align-content:start}
+.steps li::before{content:counter(s);font:800 13px var(--f-mono);width:26px;height:26px;border-radius:50%;border:2px solid var(--ink);display:grid;place-items:center}
+.steps b{font-size:15px}
+.steps span{font-size:13.5px;color:var(--ink-2)}
+.ledger{margin-top:22px}
+.borrowed{margin-top:26px}.borrowed h3{margin:0 0 6px;font-size:18px}.borrowed .bnote{margin:0 0 10px;color:var(--ink-2)}
+.borrowed ul{margin:0;padding-left:20px}.borrowed li{margin:6px 0;line-height:1.5}.borrowed .bwho{color:var(--muted)}
+.ledger summary{cursor:pointer;font-weight:700}
+.meta{margin-top:24px;display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;font-size:13px;color:var(--ink-2)}
+.meta dt{font:600 11px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding-top:2px}
+.meta dd{margin:0}
+footer{padding-block:56px 64px;color:var(--muted);font-size:13px}
+#app-error{padding:40px 20px;font-size:16px}
+
+/* audit */
+.au-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:28px;align-items:start;margin-top:18px}
+.au-plotcol{min-width:0;position:sticky;top:16px}
+.plotcard{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:10px 10px 4px;min-width:0}
+#auplot,#tsplot{display:block;width:100%}
+.q-zone.mine{fill:var(--warn);opacity:.08} .q-zone.miss{fill:var(--focus);opacity:.08}
+.fit{stroke:var(--ink);stroke-width:1.6;stroke-dasharray:7 5;opacity:.75;fill:none}
+.anc{cursor:default}
+.anc rect{fill:var(--ink);stroke:var(--surface);stroke-width:1.5}
+.anc.on-map{cursor:pointer}
+.anc text{font:600 11px var(--f-display);fill:var(--ink);paint-order:stroke;stroke:var(--surface);stroke-width:3.5px;stroke-linejoin:round}
+.q-zone.gem{fill:var(--ok);opacity:.07} .q-zone.hyped{fill:var(--challenge);opacity:.07}
+.q-line{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 4;opacity:.7}
+.q-label{font:600 10.5px var(--f-mono);letter-spacing:.07em;text-transform:uppercase;fill:var(--muted)}
+.ax{stroke:var(--ink-2);stroke-width:1}
+.ax-t{font:400 11px var(--f-mono);fill:var(--muted)}
+.ax-l{font:600 12px var(--f-display);fill:var(--ink-2)}
+.pt{cursor:pointer}
+.pt circle{fill:var(--surface);stroke:var(--fc);stroke-width:2}
+.pt.flagged circle{fill:var(--fc)}
+.pt.pool circle{stroke-dasharray:2.4 1.8}
+.pt.pool.flagged circle{fill:color-mix(in srgb,var(--fc) 55%,var(--surface))}
+.pt .lb{stroke:var(--fc);stroke-width:1.4;fill:none}
+.pt .lbh{fill:var(--fc)}
+.pt text{font:600 11px var(--f-display);fill:var(--ink);paint-order:stroke;stroke:var(--surface);stroke-width:3.5px;stroke-linejoin:round}
+.pt:hover circle,.pt:focus-visible circle{stroke-width:3.2}
+.pt:focus{outline:none}
+.pt:focus-visible circle{stroke:var(--focus)}
+.pt.sel circle{stroke:var(--ink);stroke-width:3.2}
+.flaglists{display:grid;gap:22px;min-width:0}
+.fl h3{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fl > p{font-size:13.5px;color:var(--muted);margin-top:4px}
+.fl ul{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:12px}
+.fl li{display:grid;gap:5px;padding-bottom:12px;border-bottom:1px solid var(--hair)}
+.fl .row1{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.scores{font:400 12px var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.why{font-family:var(--f-body);font-size:15px;line-height:1.45;color:var(--ink-2)}
+.flag{display:inline-flex;align-items:center;gap:6px;font:600 11px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;padding:3px 9px;border-radius:999px;border:1px solid currentColor;color:var(--fc);white-space:nowrap}
+.flag::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.offmap{font:600 10.5px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.mention.pool i{border-style:dashed;border-color:var(--muted)}
+.rate{margin-top:18px;border-top:1px solid var(--hair);padding-top:12px;display:grid;gap:8px}
+.rate h3{margin:0}.rate p{margin:0}
+.rate-seg{display:flex;gap:6px}
+.rate-seg button{width:36px;height:32px;border-radius:8px;border:1px solid var(--hair);background:var(--surface);font:600 14px var(--f-display);color:var(--ink-2);cursor:pointer}
+.rate-seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.rate-why{font:14px var(--f-body);padding:7px 10px;border:1px solid var(--hair);border-radius:8px;background:var(--surface);color:var(--ink)}
+.rate-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.rate-row button{font:600 13px var(--f-display);padding:6px 12px;border-radius:8px;border:1px solid var(--ink);background:var(--ink);color:var(--surface);cursor:pointer}
+.rate-row .rate-clear{background:transparent;color:var(--ink-2);border-color:var(--hair)}
+.calib{margin-top:16px;border:1px solid var(--hair);border-radius:12px;padding:14px 16px;display:grid;gap:8px}
+.calib h3{margin:0;font-size:16px}.calib p{margin:0;font-size:14px;color:var(--ink-2)}
+.calib table{width:100%;border-collapse:collapse;font-size:13.5px}.calib td,.calib th{padding:4px 8px 4px 0;text-align:left;vertical-align:top}
+.calib .num{text-align:right;white-space:nowrap}
+.au-notes{margin-top:30px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px 34px}
+.au-notes p,.au-notes li{font-size:14px;color:var(--ink-2)}
+.au-notes ul{margin:8px 0 0;padding-left:18px;display:grid;gap:6px}
+.bars{display:grid;gap:7px;margin-top:8px}
+.bar{display:grid;grid-template-columns:96px minmax(0,1fr) 44px;gap:10px;align-items:center;font-size:13px;color:var(--ink-2)}
+.bar.main{font-weight:700;color:var(--ink)}
+.track{height:7px;border-radius:4px;background:var(--surface-2);position:relative;overflow:hidden}
+.track i{position:absolute;left:0;top:0;bottom:0;background:var(--fc);border-radius:4px}
+.bar .num{text-align:right;font-size:12.5px}
+.au-dr{display:grid;gap:4px}
+.au-dr .why{margin-top:6px}
+.au-dr details{border-top:1px solid var(--hair);padding:10px 0 4px}
+.au-dr summary{cursor:pointer;font-weight:700;font-size:14px}
+.au-dr ul{margin:8px 0 4px;padding-left:18px;display:grid;gap:8px;font-size:14px}
+.au-dr .small{font-size:12.5px;color:var(--muted)}
+.sup{font:600 10px var(--f-mono);text-transform:uppercase;letter-spacing:.05em;padding:1px 7px;border-radius:999px;border:1px solid currentColor;margin-right:6px;white-space:nowrap}
+.sup.supported,.sup.builds_on,.sup.contrasts,.sup.substantial{color:var(--ok)}
+.sup.partial,.sup.modest,.sup.baseline,.sup.uses{color:var(--warn)}
+.sup.unsupported,.sup.negligible{color:var(--challenge)}
+.sup.untested,.sup.mentions,.sup.not_cited{color:var(--muted)}
+.side{border-left:3px solid var(--hair);padding:2px 0 2px 10px;display:grid;gap:4px;margin-top:10px}
+.side.adv{border-color:var(--ok)} .side.crit{border-color:var(--challenge)} .side.judge{border-color:var(--ink)}
+.side b{font:600 11px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.side p{font-family:var(--f-body);font-size:14.5px;line-height:1.5}
+
+/* gates */
+.gt-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px;align-items:start;margin-top:18px}
+.gt-dr dl{margin:8px 0 0;display:grid;gap:10px}
+.gt-dr dt{font:600 11px var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.gt-dr dd{margin:3px 0 0;font-size:14px;line-height:1.45;color:var(--ink-2)}
+.gt-dr dd ul{margin:6px 0 0;padding-left:18px;display:grid;gap:4px}
+.gt-dr dd b{color:var(--ink)}
+.gt-dr dd ul.ck{list-style:none;padding:0;gap:6px;overflow-wrap:anywhere}
+.ck-on th,.ck-on td{padding-inline:8px}
+.ck-tags{display:flex;flex-wrap:wrap;gap:4px}
+.ck-tags .sup{margin:0;display:inline-block;white-space:normal;border-radius:7px;line-height:1.35}
+
+/* quality + outlook */
+.q-block{margin-top:22px}
+.q-part{margin-top:56px;padding-top:28px;border-top:1px solid var(--hair)}
+.q-part > .sec-head{margin-bottom:18px}
+.q-part > .sec-head h3{font-size:24px;letter-spacing:-.01em}
+.nx-act li{display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:6px 16px;align-items:start}
+.nx-w{display:inline-flex;align-items:center;gap:6px}
+.nx-p{font-size:14px;line-height:1.55;color:var(--ink-2)}
+.nx-p b{color:var(--ink);font-weight:600}
+.nx-p .mention{margin:1px 0}
+.fl .why .ps{vertical-align:1px;margin-right:4px}
+
+@media (max-width:960px){
+  .gt-grid{grid-template-columns:1fr}
+  .au-grid,.au-notes{grid-template-columns:1fr}
+  .au-plotcol{position:static}
+  .equation{grid-template-columns:1fr}
+  .eq-op{writing-mode:horizontal-tb;transform:none;justify-content:start;padding-left:20px}
+  .thread{grid-template-columns:1fr}
+  .storygrid,.checkgrid{grid-template-columns:1fr}
+}
+@media (max-width:760px){
+  .ladder{grid-template-columns:1fr}
+  .ladder::before{left:7px;right:auto;top:10px;bottom:16px;width:4px;height:auto}
+  .rung{padding:0 0 18px 32px}
+  .rung::before{top:2px}
+  .rung.k-root::before{left:-2px;top:0}
+  .thread{padding:18px}
+}
+@media (max-width:640px){
+  #t-fit{display:none}
+  .nx-act li{grid-template-columns:1fr}
+  .drawer{top:auto;height:82vh;width:100%;border-left:0;border-top:1px solid var(--hair);border-radius:16px 16px 0 0}
+  .prose p{font-size:17px}
+}
+@media (prefers-reduced-motion: reduce){ *{transition:none!important;scroll-behavior:auto!important} }
+</style>
+
+<p id="app-error" hidden>This report has no graph data yet. Render it with <code>python -m tastecal render graph.json</code>.</p>
+
+<header class="masthead wrap">
+  <div class="eyebrow" id="h-eyebrow">Taste-Calibrated Research</div>
+  <h1 id="h-title"></h1>
+  <p class="lede" id="h-lede"></p>
+  <div class="facts" id="h-facts"></div>
+  <p class="runnote" id="h-note" hidden></p>
+  <div class="routes" id="h-routes" aria-hidden="true"></div>
+  <nav class="toc" aria-label="Sections">
+    <a href="#mechanism">Mechanism</a><a href="#map">Map</a><a href="#threads">Threads</a><a href="#story">Story</a><a href="#check">Check</a><a href="#next" id="toc-next" hidden>Next</a><a href="#quality" id="toc-quality" hidden>Holds up?</a><a href="#method">Method</a>
+  </nav>
+</header>
+
+<main>
+<section id="mechanism" class="wrap">
+  <div class="sec-head">
+    <span class="kicker">The mechanism</span>
+    <h2>How the field works</h2>
+    <p>What everyone is trying to do, what makes it hard, and the facts that made progress possible.</p>
+  </div>
+  <div class="equation">
+    <div class="eq-cell"><span class="kicker">Goal</span><p id="m-goal"></p></div>
+    <div class="eq-op" aria-hidden="true">but</div>
+    <div class="eq-cell"><span class="kicker">Core tension</span><p id="m-tension"></p></div>
+    <div class="eq-op" aria-hidden="true">unlocked by</div>
+    <div class="eq-cell"><span class="kicker">Enabling insight</span><ul id="m-insights"></ul></div>
+  </div>
+  <div class="forces-h"><h3>Driving forces</h3><span class="kicker" id="m-forces-sub"></span></div>
+  <div class="forces" id="m-forces"></div>
+  <div class="drivers" id="m-drivers-wrap">
+    <span class="kicker">Outside pressure</span>
+    <ol id="m-drivers"></ol>
+  </div>
+</section>
+
+<section id="map" class="mapsec">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="kicker">The lineage map</span>
+      <h2>Who solved whose problem</h2>
+      <p id="map-hint"></p>
+    </div>
+    <div class="map-controls">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" id="v-map" aria-pressed="true">Map</button>
+        <button type="button" id="v-list" aria-pressed="false">List</button>
+      </div>
+      <div class="ctl-group" id="rel-toggles" aria-label="Relation types"><span class="ctl-label">Links</span></div>
+      <div class="ctl-group" id="folded-ctl" hidden><span class="ctl-label">Side branches</span><div class="seg" role="group" aria-label="Side branches"><button type="button" id="f-hide" aria-pressed="true" title="Keep the side branches folded into the badge on each line">Hide</button><button type="button" id="f-show" aria-pressed="false" title="Show every side branch on the map">Show</button></div></div>
+      <div class="ctl-group">
+        <button type="button" class="tog" id="t-blogs" aria-pressed="true">Blogs &amp; reports</button>
+        <button type="button" class="tog" id="t-fit" aria-pressed="false" title="Shrink the map to the window width">Fit width</button>
+      </div>
+    </div>
+    <div class="legend-shapes" style="margin-top:12px">
+      <span><svg width="18" height="18" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="var(--surface)" stroke="var(--ink-2)" stroke-width="2.5"/></svg>Paper</span>
+      <span><svg width="18" height="18" aria-hidden="true"><rect x="3" y="3" width="12" height="12" rx="3" fill="var(--surface)" stroke="var(--ink-2)" stroke-width="2.5"/></svg>Blog or report</span>
+      <span><svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="8.5" fill="var(--surface)" stroke="var(--ink-2)" stroke-width="2.5"/><circle cx="11" cy="11" r="4.5" fill="var(--ink-2)"/></svg>Turning point</span>
+      <span><svg width="18" height="18" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="var(--surface)" stroke="var(--ink-2)" stroke-width="2.5" stroke-dasharray="3 2.6"/></svg>Outside driver</span>
+      <span><svg width="16" height="26" aria-hidden="true"><rect x="2" y="2" width="12" height="22" rx="6" fill="var(--surface)" stroke="var(--ink)" stroke-width="2.5"/></svg>Seed (on every line it touches)</span>
+    </div>
+    <div class="focusbar" id="focusbar" aria-live="polite"></div>
+  </div>
+  <div class="mapframe">
+    <div class="mapscroll" id="mapscroll">
+      <div class="mapinner" id="mapinner">
+        <svg id="mapsvg" role="img" aria-label="Lineage map"></svg>
+        <div class="lanelabels" id="lanelabels"></div>
+      </div>
+    </div>
+    <div class="listview wrap" id="listview">
+      <div class="tablewrap">
+        <table><thead><tr><th>Date</th><th>Work</th><th>Thread</th><th>Role</th><th>Links</th></tr></thead><tbody id="list-body"></tbody></table>
+      </div>
+    </div>
+  </div>
+  <div class="wrap borrowed" id="borrowed" hidden>
+    <h3>Borrowed from other fields</h3>
+    <p class="bnote">This map is limited to <b id="b-scope"></b>. The works below come from other fields. Works on the map use them, but they are not stations here: they were not expanded, read or audited.</p>
+    <ul id="b-list"></ul>
+  </div>
+</section>
+
+<section id="threads" class="wrap">
+  <div class="sec-head">
+    <span class="kicker">Problem threads</span>
+    <h2>Why each thread is hard</h2>
+    <p>Each line on the map is one persistent question. Read each ladder left to right: the symptom researchers saw, then "why?" asked until it reaches a root no single paper can change.</p>
+  </div>
+  <div class="threadrows" id="threadrows"></div>
+</section>
+
+<section id="story" class="wrap">
+  <div class="sec-head">
+    <span class="kicker">The story</span>
+    <h2>Read it as a story</h2>
+  </div>
+  <div class="storygrid">
+    <div class="prose" id="s-body"></div>
+    <aside>
+      <div class="aside-block">
+        <h3>Knock-on effects</h3>
+        <p class="serif" style="font-size:15px;color:var(--ink-2)">Where solving one problem created the next one.</p>
+        <ul class="ko" id="s-knock"></ul>
+      </div>
+      <div class="aside-block">
+        <h3>Still open</h3>
+        <ol class="openp" id="s-open"></ol>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section id="check" class="wrap">
+  <div class="sec-head">
+    <span class="kicker">Check</span>
+    <h2>Does the explanation hold?</h2>
+    <p>A good set of driving forces should explain every work on the map and predict what came next.</p>
+  </div>
+  <div class="checkgrid">
+    <div class="cover" id="c-cover"></div>
+    <div class="tablecard">
+      <table><thead><tr><th>Predicted from the forces alone</th><th>Realised by later work</th></tr></thead><tbody id="c-preds"></tbody></table>
+    </div>
+  </div>
+  <p class="note" id="c-note"></p>
+</section>
+
+<section id="next" class="wrap" hidden>
+  <div class="sec-head">
+    <span class="kicker">Outlook</span>
+    <h2>What's next</h2>
+    <p>Who is working on what now, the open questions with the experiment that would settle each, and the assumptions everyone shares.</p>
+  </div>
+  <div class="fl nx-act" id="nx-active"></div>
+  <div class="gt-grid">
+    <div class="fl" id="nx-steps"></div>
+    <div class="fl" id="nx-assume"></div>
+  </div>
+  <p class="note" id="nx-note"></p>
+</section>
+
+<section id="quality" class="wrap" hidden>
+  <div class="sec-head">
+    <span class="kicker">Reading list</span>
+    <h2>Does it hold up?</h2>
+    <p>Each paper was read from its own text: does it deliver its claim, does it say why it works, do the gains repeat. Separately, a blind score of its contribution is set against how much notice it got.</p>
+  </div>
+  <div class="facts" id="q-facts"></div>
+  <div class="fl q-block" id="q-dis" hidden></div>
+  <div id="gates" hidden>
+    <div class="gt-grid">
+      <div class="fl" id="gt-read"></div>
+      <div class="flaglists" id="gt-folded"></div>
+    </div>
+    <details class="ledger">
+      <summary id="gt-all-sum">All gated works</summary>
+      <div class="tablecard" style="margin-top:12px">
+        <table id="gt-table"><thead><tr><th>Work</th><th>Verdict</th><th>Claim</th><th>Reason</th><th>Robustness</th><th id="gt-ck-h" hidden>Checks</th><th>Why</th></tr></thead><tbody id="gt-all"></tbody></table>
+      </div>
+    </details>
+    <div class="au-notes">
+      <div><h3>How it was judged</h3><p id="gt-method" style="margin-top:8px"></p></div>
+      <div><h3>Read with care</h3><ul id="gt-caveats"></ul></div>
+    </div>
+  </div>
+  <div id="audit" class="q-part" hidden>
+    <div class="sec-head">
+      <h3>Notice versus contribution</h3>
+      <p>How much notice each work got, set against how much it contributed. Contribution was scored blind, from evidence with names, venues and counts removed. The corners are where to look twice.</p>
+    </div>
+    <div class="facts" id="au-facts"></div>
+    <div class="calib" id="au-calib" hidden></div>
+    <div class="au-grid">
+      <div class="au-plotcol">
+        <div class="plotcard"><svg id="auplot" role="img" aria-label="Scatter plot of attention against contribution"></svg></div>
+        <div class="legend-shapes" id="au-legend" style="margin-top:10px"></div>
+      </div>
+      <div class="flaglists" id="au-lists"></div>
+    </div>
+    <details class="ledger">
+      <summary id="au-all-sum">All assessed works</summary>
+      <div class="tablecard" style="margin-top:12px">
+        <table><thead><tr><th>Work</th><th>Flag</th><th>Contribution</th><th>Attention</th><th>Judge</th><th>Reason</th></tr></thead><tbody id="au-all"></tbody></table>
+      </div>
+    </details>
+    <div class="au-notes">
+      <div><h3>How it was judged</h3><p id="au-method" style="margin-top:8px"></p><p id="au-process" style="margin-top:8px"></p></div>
+      <div><h3>Read with care</h3><ul id="au-caveats"></ul></div>
+    </div>
+  </div>
+  <div id="taste" class="q-part" hidden>
+    <div class="sec-head">
+      <h3>Your taste versus the blind score</h3>
+      <p>Each work's taste score, from your profile, set against its blind contribution score, which never saw your profile. Where the two agree, read with confidence. Where they part, either your taste sees something the evidence does not, or it is narrowing.</p>
+    </div>
+    <div class="facts" id="ts-facts"></div>
+    <div class="au-grid">
+      <div class="au-plotcol">
+        <div class="plotcard"><svg id="tsplot" role="img" aria-label="Scatter plot of your taste score against the blind contribution score"></svg></div>
+        <div class="legend-shapes" id="ts-legend" style="margin-top:10px"></div>
+      </div>
+      <div class="flaglists" id="ts-lists"></div>
+    </div>
+  </div>
+</section>
+
+<section id="method" class="wrap">
+  <div class="sec-head">
+    <span class="kicker">Method</span>
+    <h2>How this map was grown</h2>
+    <p>Expansion follows problems, not raw citation counts, so the map stays small enough to read.</p>
+  </div>
+  <ol class="steps">
+    <li><b>Read the seed</b><span>Reduce it to what it inherits, the move it makes, its key insight, and the limitations it leaves. The limitations open the problem ledger.</span></li>
+    <li><b>Open citations by how they are cited</b><span>Backward: keep references the seed cites when framing its problem. Forward: keep citers whose citing sentence fixes, extends or challenges it. Drop mere users.</span></li>
+    <li><b>Search by problem</b><span>Each open problem becomes a query over papers and the web, which finds work that tackles it without citing the seed, and blogs.</span></li>
+    <li><b>Update the ledger, repeat</b><span>New works close problems and open new ones. Stop when the budget is full or rounds stop producing new problems.</span></li>
+    <li><b>Synthesize</b><span>Group problems into threads, ask "why?" down to a root, merge shared roots into driving forces, then test them against later work.</span></li>
+  </ol>
+  <div class="tablecard">
+    <table><thead><tr><th>Round</th><th>Opened from</th><th>Kept</th><th>New problems</th><th>Problems addressed</th><th>What happened</th></tr></thead><tbody id="r-body"></tbody></table>
+  </div>
+  <details class="ledger">
+    <summary>Full problem ledger</summary>
+    <div class="tablecard" style="margin-top:12px">
+      <table><thead><tr><th>Id</th><th>Problem</th><th>Thread</th><th>Raised by</th><th>Addressed by</th></tr></thead><tbody id="l-body"></tbody></table>
+    </div>
+  </details>
+  <dl class="meta" id="r-meta"></dl>
+</section>
+</main>
+
+<footer class="wrap" id="foot"></footer>
+
+<aside class="drawer" id="drawer" hidden aria-label="Work details"></aside>
+<div class="tip" id="tip" hidden></div>
+
+<script id="da-data" type="application/json">/*__GRAPH_DATA__*/null</script>
+<script>
+(() => {
+"use strict";
+let G = null;
+try { G = JSON.parse(document.getElementById("da-data").textContent); } catch (e) { G = null; }
+if (!G || !Array.isArray(G.nodes) || !G.nodes.length) { document.getElementById("app-error").hidden = false; return; }
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs, parent) => {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs || {}) if (attrs[k] !== null && attrs[k] !== undefined && attrs[k] !== "") e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const nodes = G.nodes.slice().sort((a, b) => (a.date || "").localeCompare(b.date || "") || a.id.localeCompare(b.id));
+const edges = (G.edges || []).filter((e) => e && e.source && e.target);
+const threads = G.threads || [];
+const field = G.field || {};
+const forces = field.driving_forces || [];
+const meta = G.meta || {};
+const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+const tById = Object.fromEntries(threads.map((t) => [t.id, t]));
+const fById = Object.fromEntries(forces.map((f) => [f.id, f]));
+const seed = nodes.find((n) => n.role === "seed") || byId[meta.seed] || nodes[0];
+const colorOf = (tid) => { const i = threads.findIndex((t) => t.id === tid); return `var(--l${((i < 0 ? 0 : i) % 6) + 1})`; };
+const primary = (n) => (n && n.threads && n.threads[0] && tById[n.threads[0]]) ? n.threads[0] : (threads[0] || {}).id;
+const AU = G.audit || null;
+const pool = (G.pool || []).filter((w) => w && w.id && !byId[w.id]);
+const poolById = Object.fromEntries(pool.map((w) => [w.id, w]));
+const workOf = (id) => byId[id] || poolById[id];
+
+/* ---------- your ratings: only when this report is opened from the local tastecal page ---------- */
+const RATE = { on: /^https?:$/.test(location.protocol) && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)
+  && /^\/(runs|examples)\/[^/]+\/report\.html$/.test(location.pathname), mine: {}, title: "" };
+const RATE_VAL = [null, 0.1, 0.3, 0.5, 0.7, 0.9];
+const normT = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9\u3400-\u9fff]+/g, "");
+const runOf = () => { const m = location.pathname.match(/^\/(runs|examples)\/([^/]+)\//); return m ? { group: m[1], id: decodeURIComponent(m[2]) } : { group: "", id: "" }; };
+if (RATE.on) {
+  fetch(`/api/taste/ratings?group=${encodeURIComponent(runOf().group)}&run=${encodeURIComponent(runOf().id)}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => { if (!d || !Array.isArray(d.papers)) { RATE.on = false; return; } RATE.title = d.title || d.profile || ""; d.papers.forEach((p) => { RATE.mine[normT(p.ref)] = p; }); })
+    .catch(() => { RATE.on = false; });
+}
+function rateBlock(n) {
+  const mine = RATE.mine[normT(n.title)];
+  const cur = mine && typeof mine.score === "number" ? Math.max(1, Math.min(5, Math.round((mine.score - 0.1) / 0.2) + 1)) : 0;
+  return `<h3>Your rating</h3>
+    <p class="small">How much does this paper really contribute, in your view? 1 means nothing real, 5 means a major step. It is saved to your taste profile${RATE.title ? ` “${esc(RATE.title)}”` : ""}, and later runs calibrate on it.</p>
+    <div class="rate-seg" role="group" aria-label="Your rating">${[1, 2, 3, 4, 5].map((k) => `<button type="button" data-rate="${k}" aria-pressed="${k === cur}">${k}</button>`).join("")}</div>
+    <input class="rate-why" type="text" maxlength="300" placeholder="Why, in a line (optional)" value="${esc(mine ? mine.comment || "" : "")}">
+    <div class="rate-row"><button type="button" class="rate-save">Save</button>${mine ? `<button type="button" class="rate-clear">Remove</button>` : ""}<span class="small rate-msg" aria-live="polite"></span></div>`;
+}
+document.addEventListener("click", async (ev) => {
+  const k = ev.target.closest(".rate [data-rate]");
+  if (k) { k.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === k))); return; }
+  const act = ev.target.closest(".rate .rate-save, .rate .rate-clear"); if (!act) return;
+  const box = act.closest(".rate"), n = workOf(box.getAttribute("data-node")), msg = box.querySelector(".rate-msg");
+  if (!n) return;
+  const clear = act.classList.contains("rate-clear"), on = box.querySelector('[data-rate][aria-pressed="true"]');
+  if (!clear && !on) { msg.textContent = "Pick a number from 1 to 5 first."; return; }
+  const score = clear ? null : RATE_VAL[+on.getAttribute("data-rate")], comment = box.querySelector(".rate-why").value.trim();
+  try {
+    const r = await fetch("/api/taste/rate", { method: "POST", headers: { "Content-Type": "application/json", "X-TasteCal": "1" },
+      body: JSON.stringify({ group: runOf().group, run: runOf().id, ref: n.title, score, comment }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    if (clear) delete RATE.mine[normT(n.title)]; else RATE.mine[normT(n.title)] = { ref: n.title, score, comment };
+    RATE.title = d.title || RATE.title;
+    box.innerHTML = rateBlock(n);
+    box.querySelector(".rate-msg").textContent = clear ? "Removed." : `Saved. “${d.title}” now has ${d.rated} rated papers.`;
+  } catch (e) {
+    msg.textContent = `Not saved (${e.message}). Is the tastecal page still running?`;
+  }
+});
+const GT = G.gates || null;
+const isFolded = (n) => !!(n && n !== seed && n.gates && n.gates.fold);   // did not pass the gates: drawn dashed, in place
+// Side branches fold away; the main chain stays. The main chain is every work tied to the seed, directly or through
+// other works, by resolves / extends / inspired / challenges links. A work reached only through applies, competes or
+// explains links, or one the synthesis called a branch or an explainer, is a side branch.
+const MAIN_REL = new Set(["resolves", "extends", "inspires", "challenges"]);
+const mainChain = (() => {
+  const adj = {};
+  edges.forEach((e) => { if (!MAIN_REL.has(e.type)) return; (adj[e.source] = adj[e.source] || []).push(e.target); (adj[e.target] = adj[e.target] || []).push(e.source); });
+  const seen = new Set(seed ? [seed.id] : []), queue = seed ? [seed.id] : [];
+  while (queue.length) (adj[queue.shift()] || []).forEach((y) => { if (!seen.has(y)) { seen.add(y); queue.push(y); } });
+  return seen;
+})();
+const isBranch = (n) => !!(n && n !== seed && (n.role === "branch" || n.role === "explainer" || !mainChain.has(n.id)));
+const VERDICT_LABEL = Object.assign({ solid: "Solid", treasure: "Treasure candidate", unattributed: "Gain not attributed", incremental: "Incremental", "not-delivered": "Claim not delivered" }, (GT && GT.labels) || {});
+const VERDICT_COLOR = { solid: "var(--ok)", treasure: "var(--warn)", unattributed: "var(--ink-2)", incremental: "var(--muted)", "not-delivered": "var(--challenge)" };
+const verdictPill = (v) => `<span class="flag" style="--fc:${VERDICT_COLOR[v] || "var(--ink-2)"}">${esc(VERDICT_LABEL[v] || v)}</span>`;
+// A verdict read from less than the full text is not verified, and such a work is never folded.
+const NV = { label: "Not verified", abstract: "Only the abstract could be read, so this verdict is not verified and the work is never folded.", card: "Only a short summary could be read, so this verdict is not verified and the work is never folded." };
+const unverified = (n) => !!(n && n.gates && n.gates.basis && n.gates.basis !== "full text");
+const nvBadge = (n) => (unverified(n) ? `<span class="sup partial" title="${esc(NV[n.gates.basis] || NV.abstract)}">${esc(NV.label)}</span>` : "");
+const tasteTxt = GT && GT.taste_name ? `Taste profile: ${GT.taste_name}` : "";
+
+const REL = {
+  resolves:   { label: "Resolves",   verb: "resolves a limitation of", dash: "",         w: 1.8, mk: "arrow" },
+  extends:    { label: "Extends",    verb: "extends",                  dash: "",         w: 1.25, mk: "open" },
+  inspires:   { label: "Inspired",   verb: "was inspired by",          dash: "2 4",      w: 1.6, mk: "arrow" },
+  challenges: { label: "Challenges", verb: "challenges",               dash: "",         w: 1.8, mk: "tee" },
+  competes:   { label: "Competes",   verb: "competes with",            dash: "7 4",      w: 1.4, mk: "" },
+  applies:    { label: "Applies",    verb: "applies",                  dash: "10 3 2 3", w: 1.4, mk: "arrow" },
+  explains:   { label: "Explains",   verb: "explains",                 dash: "1.5 3.5",  w: 1.5, mk: "dot" },
+};
+const relOf = (t) => REL[t] || REL.extends;
+const ROOT_LABEL = { hardware: "Hardware limit", math: "Mathematical fact", data: "Property of data", goal: "The field's goal", economics: "Economics", other: "Root cause" };
+const ROLE_LABEL = { seed: "Seed", foundation: "Foundation", driver: "Outside driver", "turning-point": "Turning point", improvement: "Improvement", branch: "Branch", frontier: "Frontier", explainer: "Explainer" };
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fmtDate = (d) => { if (!d) return ""; const p = String(d).split("-"); return p[1] ? `${MONTHS[+p[1] - 1]} ${p[0]}` : p[0]; };
+const statusClass = (s) => /solved/i.test(s || "") ? "ok" : /open/i.test(s || "") ? "open" : "active";
+
+const chip = (id) => {
+  const n = byId[id];
+  if (!n && poolById[id]) return `<button type="button" class="mention pool" data-audit="${esc(id)}" style="--c:var(--muted)"><i aria-hidden="true"></i>${esc(poolById[id].short || id)}</button>`;
+  if (!n) return esc(id);
+  return `<button type="button" class="mention" data-node="${esc(id)}" style="--c:${colorOf(primary(n))}"><i aria-hidden="true"></i>${esc(n.short)}</button>`;
+};
+const tchip = (tid, extra) => {
+  const t = tById[tid];
+  if (!t) return "";
+  return `<button type="button" class="tchip${extra ? " " + extra : ""}" data-lane="${esc(tid)}" aria-pressed="false" style="--c:${colorOf(tid)}"><i aria-hidden="true"></i>${esc(t.name)}</button>`;
+};
+const lineSample = (type, w = 28) => {
+  const R = relOf(type);
+  const col = type === "challenges" ? "var(--challenge)" : "var(--edge)";
+  let end = "";
+  if (R.mk === "arrow") end = `<path d="M${w - 7},1 L${w},5 L${w - 7},9 z" fill="${col}"/>`;
+  if (R.mk === "open") end = `<path d="M${w - 7},1 L${w - 1},5 L${w - 7},9" fill="none" stroke="${col}" stroke-width="1.5"/>`;
+  if (R.mk === "tee") end = `<path d="M${w - 1.5},0 L${w - 1.5},10" stroke="${col}" stroke-width="2.2"/>`;
+  if (R.mk === "dot") end = `<circle cx="${w - 3}" cy="5" r="2.6" fill="${col}"/>`;
+  return `<svg width="${w}" height="10" aria-hidden="true"><path d="M1,5 L${w - (R.mk ? 4 : 1)},5" stroke="${col}" stroke-width="${R.w}" ${R.dash ? `stroke-dasharray="${R.dash}"` : ""} fill="none"/>${end}</svg>`;
+};
+const withMentions = (text) => esc(text).replace(/\[\[([a-z0-9-]+)\]\]/gi, (m, id) => (byId[id] ? chip(id) : esc(id)));
+
+/* ---------- lane order: threads grouped by force ---------- */
+const laneGroups = (() => {
+  const used = new Set(); const groups = [];
+  forces.forEach((f) => { const ts = threads.filter((t) => t.force === f.id); ts.forEach((t) => used.add(t.id)); if (ts.length) groups.push({ force: f, threads: ts }); });
+  const loose = threads.filter((t) => !used.has(t.id)); if (loose.length) groups.push({ force: null, threads: loose });
+  return groups;
+})();
+const laneOrder = laneGroups.flatMap((g) => g.threads.map((t) => t.id));
+
+/* ---------- header ---------- */
+const years = nodes.map((n) => parseInt(String(n.date || "").slice(0, 4), 10) || n.year).filter(Boolean);
+const y0 = Math.min(...years), y1 = Math.max(...years);
+$("#h-eyebrow").textContent = `Taste-Calibrated Research · lineage of ${seed.short}`;
+$("#h-title").textContent = (G.story && G.story.title) || `${seed.short} lineage`;
+$("#h-lede").innerHTML = `<em>${esc(seed.title)}</em> (${esc(seed.authors)}${seed.year ? ", " + esc(seed.year) : ""}) sits at the centre of ${nodes.length} works${field.name ? " in " + esc(field.name.charAt(0).toLowerCase() + field.name.slice(1)) : ""}. The map traces who solved whose problem; the sections around it explain why the field moved the way it did.`;
+$("#h-facts").innerHTML = [`${nodes.length} works`, `${edges.length} links`, `${threads.length} problem threads`, `${forces.length} driving forces`, `${y0}–${y1}`].map((s) => `<span>${esc(s)}</span>`).join("");
+if (meta.note) { $("#h-note").textContent = meta.note; $("#h-note").hidden = false; }
+$("#h-routes").innerHTML = laneOrder.map((t) => `<i style="background:${colorOf(t)}"></i>`).join("");
+
+/* ---------- mechanism ---------- */
+$("#m-goal").textContent = field.goal || "";
+$("#m-tension").textContent = field.core_tension || "";
+$("#m-insights").innerHTML = (field.enabling_insights || []).map((i) => `<li><span>${esc(i.text)}</span><span class="chips">${(i.nodes || []).filter((x) => byId[x]).map(chip).join("")}</span></li>`).join("");
+$("#m-forces-sub").textContent = forces.length ? `${forces.length} root causes behind ${threads.length} threads` : "";
+$("#m-forces").innerHTML = forces.map((f) => `
+  <article class="force">
+    <div class="force-top"><span class="fid">${esc(f.id)}</span><span class="root-tag">${esc(ROOT_LABEL[f.root_type] || f.root_type || "")}</span></div>
+    <h3>${esc(f.name)}</h3>
+    <p>${esc(f.statement)}</p>
+    <div class="tchips">${(f.threads || []).map((t) => tchip(t)).join("")}</div>
+  </article>`).join("");
+const drivers = (field.external_drivers || []).slice().sort((a, b) => (a.year || 0) - (b.year || 0));
+if (drivers.length) {
+  $("#m-drivers").innerHTML = drivers.map((d) => `<li><span class="yr">${esc(d.year || "")}</span><span>${esc(d.text)}</span>${(d.nodes || []).length ? `<span class="chips">${d.nodes.filter((x) => byId[x]).map(chip).join("")}</span>` : ""}</li>`).join("");
+} else $("#m-drivers-wrap").hidden = true;
+
+/* ---------- map ---------- */
+const mapsec = $("#map"), scroller = $("#mapscroll"), inner = $("#mapinner"), svg = $("#mapsvg"), labels = $("#lanelabels"), tip = $("#tip");
+const state = { selected: null, lane: null, hidden: new Set(), blogs: true, fit: null, unfold: new Set(), allFolded: !!(GT && GT.view === "show") };  // fit: null = automatic
+let L = null, scale = 1, spacer = 0;  // spacer: extra scroll room while the drawer covers the right side
+$("#map-hint").textContent = `Each coloured line is a problem thread and each station a work, placed by date. ${seed.short}, the seed, is the interchange every line passes through. Links run from earlier to later work. Hover a station for a summary, click it for the full card.`;
+
+$("#folded-ctl").hidden = !nodes.some(isBranch);
+if (nodes.some(isBranch)) $("#map-hint").textContent += " Side branches (applications, parallel routes and explanations off the main chain) are folded into the “+N side branches” badge on their line.";
+const AXIS_H = 58, FORCE_H = 28, LANE_H = 124, RAIL = 74, PAD_L = 30, PAD_R = 60;
+const ym = (n) => { const p = String(n.date || "").split("-"); return { y: parseInt(p[0], 10) || n.year || y0, m: p[1] ? parseInt(p[1], 10) : 6 }; };
+const visible = (n) => !!n && (state.blogs || n.kind === "paper" || n === seed) && (!isBranch(n) || state.allFolded || state.unfold.has(primary(n)));
+const radius = (n) => (n.kind !== "paper" ? 8 : n.role === "turning-point" ? 10 : 7.5);
+
+function layout(slot) {
+  let y = AXIS_H; const laneTop = {}; const groupTop = [];
+  laneGroups.forEach((g) => { groupTop.push({ g, y }); y += FORCE_H; g.threads.forEach((t) => { laneTop[t.id] = y; y += LANE_H; }); y += 6; });
+  const H = y + 24;  // room for three-line labels in the last lane
+  const railY = (tid) => (laneTop[tid] !== undefined ? laneTop[tid] : laneTop[laneOrder[0]]) + RAIL;
+  const S = ym(seed);
+  const part = (n) => { const t = ym(n); if (t.y !== S.y) return "all"; if (t.m < S.m) return "before"; if (t.m > S.m) return "after"; return (n.hop || 0) < 0 ? "before" : "after"; };
+  const bucket = {};
+  nodes.forEach((n) => { if (n === seed || !visible(n)) return; const k = `${ym(n).y}|${primary(n)}|${part(n)}`; (bucket[k] = bucket[k] || []).push(n); });
+  const maxCount = (yr, p) => Math.max(0, ...laneOrder.map((l) => (bucket[`${yr}|${l}|${p}`] || []).length));
+  const cols = []; let x = PAD_L;
+  for (let yr = y0; yr <= y1; yr++) {
+    if (yr === S.y) { const b = maxCount(yr, "before"), a = maxCount(yr, "after"); const w = (b + 1 + a) * slot; cols.push({ yr, x, w, b, a }); x += w; }
+    else { const c = maxCount(yr, "all"); const w = c ? c * slot : slot * 0.5; cols.push({ yr, x, w, empty: !c }); x += w; }
+  }
+  const W = x + PAD_R;
+  const pos = {};
+  const place = (list, a, b, mA, mB) => {
+    if (!list || !list.length) return;
+    list.sort((p, q) => (p.date || "").localeCompare(q.date || "") || p.id.localeCompare(q.id));
+    const k = list.length;
+    const xs = list.map((n) => { const m = Math.min(Math.max(ym(n).m, mA), mB); return a + ((m - mA + 0.5) / (mB - mA + 1)) * (b - a); });
+    for (let i = 0; i < k; i++) xs[i] = Math.max(xs[i], i ? xs[i - 1] + slot : a + slot / 2);
+    for (let i = k - 1; i >= 0; i--) xs[i] = Math.min(xs[i], i < k - 1 ? xs[i + 1] - slot : b - slot / 2);
+    for (let i = 0; i < k; i++) xs[i] = Math.max(xs[i], a + slot / 2);
+    list.forEach((n, i) => { pos[n.id] = { x: xs[i], y: railY(primary(n)) }; });
+  };
+  let seedX = PAD_L + slot / 2;
+  cols.forEach((c) => {
+    if (c.yr === S.y) {
+      seedX = c.x + c.b * slot + slot / 2;
+      laneOrder.forEach((l) => {
+        place(bucket[`${c.yr}|${l}|before`], c.x, c.x + c.b * slot, 1, S.m);
+        place(bucket[`${c.yr}|${l}|after`], seedX + slot / 2, c.x + c.w, S.m, 12);
+      });
+    } else laneOrder.forEach((l) => place(bucket[`${c.yr}|${l}|all`], c.x, c.x + c.w, 1, 12));
+  });
+  let seedLanes = laneOrder.filter((l) => (seed.threads || []).includes(l));
+  if (!seedLanes.length) seedLanes = [primary(seed)];
+  return { W, H, slot, cols, pos, seedX, seedLanes, laneTop, groupTop, railY };
+}
+
+function seedPoint(lane) {
+  let l = lane;
+  if (!L.seedLanes.includes(l)) {
+    const idx = laneOrder.indexOf(lane);
+    l = L.seedLanes.reduce((best, s) => (Math.abs(laneOrder.indexOf(s) - idx) < Math.abs(laneOrder.indexOf(best) - idx) ? s : best), L.seedLanes[0]);
+  }
+  return { x: L.seedX, y: L.railY(l), r: 9 };
+}
+function point(id, otherId) {
+  if (id === seed.id) return seedPoint(primary(byId[otherId]) || L.seedLanes[0]);
+  const n = byId[id], p = L.pos[id];
+  return p ? { x: p.x, y: p.y, r: radius(n) } : null;
+}
+function pathFor(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y, dir = dx >= 0 ? 1 : -1;
+  if (Math.abs(dy) < 1) {
+    const h = Math.min(RAIL - 14, 12 + Math.sqrt(Math.abs(dx)) * 1.7);
+    const sx = a.x + dir * a.r * 0.55, sy = a.y - a.r * 0.85;
+    const ex = b.x - dir * b.r * 0.55, ey = b.y - b.r - 2.5;
+    return `M${sx.toFixed(1)},${sy.toFixed(1)} C${(sx + dx * 0.1).toFixed(1)},${(a.y - h).toFixed(1)} ${(ex - dx * 0.1).toFixed(1)},${(b.y - h).toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`;
+  }
+  if (Math.abs(dx) < 70) {
+    // Near-vertical: bow sideways so the curve does not run through stations stacked at the same x.
+    const sg = dy > 0 ? 1 : -1, bow = (dx >= 0 ? 1 : -1) * Math.min(64, 26 + Math.abs(dy) * 0.12);
+    return `M${(a.x + bow * 0.18).toFixed(1)},${(a.y + sg * a.r).toFixed(1)} C${(a.x + bow).toFixed(1)},${(a.y + dy * 0.3).toFixed(1)} ${(b.x + bow).toFixed(1)},${(b.y - dy * 0.3).toFixed(1)} ${(b.x + bow * 0.18).toFixed(1)},${(b.y - sg * (b.r + 3)).toFixed(1)}`;
+  }
+  const sx = a.x + dir * a.r, ex = b.x - dir * (b.r + 3);
+  return `M${sx.toFixed(1)},${a.y.toFixed(1)} C${(a.x + dx * 0.5).toFixed(1)},${a.y.toFixed(1)} ${(b.x - dx * 0.5).toFixed(1)},${b.y.toFixed(1)} ${ex.toFixed(1)},${b.y.toFixed(1)}`;
+}
+const wrapText = (s, max) => {
+  const words = String(s).split(/\s+/); const lines = []; let cur = "";
+  words.forEach((w) => { if (!cur) cur = w; else if ((cur + " " + w).length <= max) cur += " " + w; else { lines.push(cur); cur = w; } });
+  if (cur) lines.push(cur);
+  if (lines.length > 3) { lines[2] = lines.slice(2).join(" "); lines.length = 3; if (lines[2].length > max + 2) lines[2] = lines[2].slice(0, max) + "…"; }
+  return lines;
+};
+
+function draw() {
+  const cw = scroller.clientWidth || 1000;
+  const BASE = 96;
+  const probe = layout(BASE);
+  const pads = PAD_L + PAD_R;
+  let slot = BASE;
+  if (probe.W < cw) slot = Math.min(150, BASE * (cw - pads) / (probe.W - pads));
+  L = layout(slot);
+  const fitScale = cw / L.W;
+  const fit = state.fit === null ? (fitScale < 1 && fitScale >= 0.8) : state.fit;
+  scale = fit && L.W > cw ? fitScale : 1;
+  $("#t-fit").setAttribute("aria-pressed", String(fit && L.W > cw));
+  $("#t-fit").hidden = L.W <= cw;
+  svg.setAttribute("viewBox", `0 0 ${L.W} ${L.H}`);
+  svg.setAttribute("width", (L.W * scale).toFixed(0));
+  svg.setAttribute("height", (L.H * scale).toFixed(0));
+  inner.style.width = `${(L.W * scale + spacer).toFixed(0)}px`;
+  inner.style.height = `${(L.H * scale).toFixed(0)}px`;
+  svg.textContent = "";
+  svg.classList.toggle("dense", edges.length > 50);  // big maps: quieter links until hovered or selected
+
+  const defs = el("defs", {}, svg);
+  const mk = (id, w, h, rx, ry, body) => { const m = el("marker", { id, markerWidth: w, markerHeight: h, refX: rx, refY: ry, orient: "auto", markerUnits: "userSpaceOnUse" }, defs); m.innerHTML = body; };
+  mk("mk-arrow", 10, 10, 8, 5, `<path class="mk" d="M0,0.8 L9,5 L0,9.2 z"/>`);
+  mk("mk-open", 10, 10, 8.5, 5, `<path class="mk-open" d="M0.8,0.8 L8.5,5 L0.8,9.2"/>`);
+  mk("mk-tee", 6, 14, 3, 7, `<path class="mk-tee" d="M3,0.5 L3,13.5"/>`);
+  mk("mk-dot", 8, 8, 4, 4, `<circle class="mk" cx="4" cy="4" r="2.8"/>`);
+
+  const gAxis = el("g", {}, svg);
+  L.cols.forEach((c) => {
+    el("line", { x1: c.x, x2: c.x, y1: 30, y2: L.H, class: "yr-line" }, gAxis);
+    const t = el("text", { x: c.x + 8, y: 20, class: "yr-label" }, gAxis); t.textContent = c.yr;
+  });
+  laneOrder.forEach((l, i) => { if (i) el("line", { x1: 0, x2: L.W, y1: L.laneTop[l], y2: L.laneTop[l], class: "lane-sep" }, gAxis); });
+
+  const gRails = el("g", {}, svg);
+  laneOrder.forEach((l) => {
+    const xs = nodes.filter((n) => n !== seed && visible(n) && primary(n) === l && L.pos[n.id]).map((n) => L.pos[n.id].x);
+    if (L.seedLanes.includes(l)) xs.push(L.seedX);
+    if (!xs.length) return;
+    el("line", { x1: Math.min(...xs) - 22, x2: Math.max(...xs) + 22, y1: L.railY(l), y2: L.railY(l), class: "rail", "data-lane": l, style: `stroke:${colorOf(l)}` }, gRails);
+  });
+
+  const gEdges = el("g", {}, svg);
+  edges.forEach((e, i) => {
+    const s = byId[e.source], t = byId[e.target];
+    if (!visible(s) || !visible(t)) return;
+    const a = point(e.source, e.target), b = point(e.target, e.source);
+    if (!a || !b) return;
+    const R = relOf(e.type), d = pathFor(a, b);
+    const g = el("g", { class: `edge-g t-${e.type}`, "data-i": i }, gEdges);
+    el("path", { d, class: `edge${e.type === "challenges" ? " challenge" : ""}`, "stroke-width": R.w, "stroke-dasharray": R.dash, "marker-end": R.mk ? `url(#mk-${R.mk})` : null }, g);
+    el("path", { d, class: "edge-hit" }, g);
+  });
+
+  const gSt = el("g", {}, svg);
+  // seed interchange
+  const top = L.railY(L.seedLanes[0]) - 17, bot = L.railY(L.seedLanes[L.seedLanes.length - 1]) + 17;
+  const gs = el("g", { class: "st seed", tabindex: 0, role: "button", "data-node": seed.id, "aria-label": `${seed.short}, the seed, ${fmtDate(seed.date)}` }, gSt);
+  el("rect", { x: L.seedX - 15, y: top, width: 30, height: bot - top, rx: 15, class: "capsule" }, gs);
+  L.seedLanes.forEach((l) => el("circle", { cx: L.seedX, cy: L.railY(l), r: 5.5, class: "cap-dot", style: `fill:${colorOf(l)}` }, gs));
+  const pillTxt = `SEED · ${String(seed.short).toUpperCase()} · ${fmtDate(seed.date).toUpperCase()}`;
+  const pw = pillTxt.length * 7.3 + 18;
+  const gp = el("g", { class: "seed-pill" }, gs);
+  el("rect", { x: L.seedX - pw / 2, y: 30, width: pw, height: 20, rx: 10 }, gp);
+  const pt = el("text", { x: L.seedX, y: 44, "text-anchor": "middle" }, gp); pt.textContent = pillTxt;
+
+  nodes.forEach((n) => {
+    if (n === seed || !visible(n) || !L.pos[n.id]) return;
+    const p = L.pos[n.id], r = radius(n);
+    const g = el("g", { class: `st k-${n.kind} r-${n.role}${isFolded(n) ? ` folded ${n.gates.verdict === "not-delivered" ? "fv-not" : "fv-inc"}` : ""}${n.gates && n.gates.verdict === "treasure" ? " v-treasure" : ""}`, transform: `translate(${p.x.toFixed(1)},${p.y.toFixed(1)})`, style: `--c:${colorOf(primary(n))}`, tabindex: 0, role: "button", "data-node": n.id, "aria-label": `${n.short}, ${fmtDate(n.date)}` }, gSt);
+    if (n.gates && n.gates.verdict === "treasure") el("circle", { r: r + 5, class: "halo" }, g);
+    if (n.kind === "paper") el("circle", { r, class: "mark" }, g);
+    else el("rect", { x: -r + 1, y: -r + 1, width: 2 * r - 2, height: 2 * r - 2, rx: 3.5, class: "mark" }, g);
+    if (n.role === "turning-point") el("circle", { r: r - 5, class: "core" }, g);
+    const lines = wrapText(n.short, Math.max(10, Math.floor(L.slot / 7.6)));
+    lines.forEach((ln, i) => { const t = el("text", { x: 0, y: r + 16 + i * 14, class: "nm", "text-anchor": "middle" }, g); t.textContent = ln; });
+    const dt = el("text", { x: 0, y: r + 16 + lines.length * 14, class: "dt", "text-anchor": "middle" }, g);
+    dt.textContent = (n.kind !== "paper" ? n.kind + " · " : "") + fmtDate(n.date) + (isFolded(n) ? (n.gates.verdict === "not-delivered" ? " · not delivered" : " · incremental") : "");
+  });
+
+  // sticky lane and force labels
+  labels.textContent = "";
+  L.groupTop.forEach(({ g, y }) => {
+    if (!g.force) return;
+    const row = document.createElement("div");
+    row.className = "lrow force-row";
+    row.style.top = `${(y + 6) * scale}px`; row.style.width = `${L.W * scale}px`;
+    row.innerHTML = `<span class="ftag">${esc(g.force.id)} · ${esc(g.force.name)}</span>`;
+    labels.appendChild(row);
+  });
+  laneOrder.forEach((l) => {
+    const row = document.createElement("div");
+    row.className = "lrow";
+    row.style.top = `${(L.laneTop[l] + 8) * scale}px`; row.style.width = `${L.W * scale}px`;
+    const nf = nodes.filter((n) => isBranch(n) && primary(n) === l && (state.blogs || n.kind === "paper")).length;
+    const open = state.allFolded || state.unfold.has(l);
+    const fold = nf ? `<button type="button" class="fold-chip" data-unfold="${esc(l)}" aria-pressed="${open}" title="${open ? "Fold these side branches back into the badge" : "Show the side branches of this line"}">${open ? `Fold ${nf} back` : `+${nf} side branch${nf > 1 ? "es" : ""}`}</button>` : "";
+    row.innerHTML = `<span class="lane-tags"><button type="button" class="lane-chip" data-lane="${esc(l)}" aria-pressed="false" title="${esc(tById[l].question || "")}" style="--c:${colorOf(l)}"><i aria-hidden="true"></i>${esc(tById[l].name)}</button>${fold}</span>`;
+    labels.appendChild(row);
+  });
+  applyState();
+}
+
+function applyState() {
+  let aN = null, aE = null;
+  if (state.selected) {
+    aN = new Set([state.selected]); aE = new Set();
+    edges.forEach((e, i) => { if (e.source === state.selected || e.target === state.selected) { aE.add(i); aN.add(e.source); aN.add(e.target); } });
+  } else if (state.lane) {
+    aN = new Set(nodes.filter((n) => (n.threads || []).includes(state.lane)).map((n) => n.id)); aN.add(seed.id); aE = new Set();
+    edges.forEach((e, i) => { if (aN.has(e.source) && aN.has(e.target)) aE.add(i); });
+  }
+  $$(".st", svg).forEach((g) => { const id = g.getAttribute("data-node"); g.classList.toggle("dim", !!aN && !aN.has(id)); g.classList.toggle("sel", id === state.selected); });
+  $$(".edge-g", svg).forEach((g) => {
+    const i = +g.getAttribute("data-i"); const e = edges[i];
+    g.style.display = state.hidden.has(e.type) ? "none" : "";
+    g.classList.toggle("dim", !!aE && !aE.has(i)); g.classList.toggle("hl", !!aE && aE.has(i));
+  });
+  $$(".rail", svg).forEach((r) => r.classList.toggle("dim", !!state.lane && r.getAttribute("data-lane") !== state.lane));
+  $$("[data-lane]").forEach((b) => b.setAttribute("aria-pressed", String(b.getAttribute("data-lane") === state.lane)));
+  const fb = $("#focusbar");
+  if (state.selected) fb.innerHTML = `Showing the links of ${chip(state.selected)} <button type="button" data-clear>Show everything</button>`;
+  else if (state.lane) fb.innerHTML = `Showing the ${esc(tById[state.lane].name)} thread: <span class="serif">${esc(tById[state.lane].question)}</span> <button type="button" data-clear>Show everything</button>`;
+  else fb.textContent = "";
+}
+
+/* tooltips */
+const moveTip = (ev) => {
+  const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  if (x + w > window.innerWidth - 8) x = ev.clientX - w - pad;
+  if (y + h > window.innerHeight - 8) y = ev.clientY - h - pad;
+  tip.style.left = `${Math.max(8, x)}px`; tip.style.top = `${Math.max(8, y)}px`;
+};
+const nodeTip = (n) => `<span class="tm">${esc(fmtDate(n.date))} · ${esc(n.kind)}${n.role ? " · " + esc(ROLE_LABEL[n.role] || n.role) : ""}</span><b>${esc(n.short)}</b><br>${esc((n.card || {}).summary || n.title)}${n.gates ? `<span class="tm" style="margin-top:8px">${esc(VERDICT_LABEL[n.gates.verdict] || "")}${n.gates.fold ? " · folded" : ""}${unverified(n) ? " · " + esc(NV.label) : ""}</span>${esc(n.gates.why || "")}` : ""}`;
+const edgeSentence = (e) => `${esc((byId[e.target] || {}).short)} ${esc(relOf(e.type).verb)} ${esc((byId[e.source] || {}).short)}`;
+svg.addEventListener("pointerover", (ev) => {
+  if (ev.pointerType && ev.pointerType !== "mouse") return;
+  const st = ev.target.closest(".st"), eg = ev.target.closest(".edge-g");
+  if (st) { tip.innerHTML = nodeTip(byId[st.getAttribute("data-node")]); tip.hidden = false; moveTip(ev); }
+  else if (eg) { const e = edges[+eg.getAttribute("data-i")]; tip.innerHTML = `<span class="tm">${esc(relOf(e.type).label)} · ${e.confidence === "stated" ? "stated" : "inferred"}</span><b>${edgeSentence(e)}</b><br>${esc(e.label)}`; tip.hidden = false; moveTip(ev); eg.classList.add("hl"); }
+});
+svg.addEventListener("pointermove", (ev) => { if (!tip.hidden) moveTip(ev); });
+svg.addEventListener("pointerout", (ev) => {
+  const eg = ev.target.closest(".edge-g");
+  if (eg && !(state.selected || state.lane)) eg.classList.remove("hl");
+  if (!ev.relatedTarget || !svg.contains(ev.relatedTarget) || (!ev.relatedTarget.closest(".st") && !ev.relatedTarget.closest(".edge-g"))) tip.hidden = true;
+});
+svg.addEventListener("click", (ev) => {
+  const st = ev.target.closest(".st"), eg = ev.target.closest(".edge-g");
+  if (st) select(st.getAttribute("data-node"));
+  else if (eg) select(edges[+eg.getAttribute("data-i")].target);
+  else clearFocus();
+});
+svg.addEventListener("keydown", (ev) => {
+  const st = ev.target.closest(".st");
+  if (st && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); select(st.getAttribute("data-node")); }
+});
+
+function clearFocus() { state.selected = null; state.lane = null; closeDrawer(); applyState(); }
+function select(id, reveal, focusAudit) {
+  if (!byId[id]) return;
+  state.selected = id; state.lane = null; tip.hidden = true;
+  if (!visible(byId[id])) {
+    if (byId[id].kind !== "paper") { state.blogs = true; $("#t-blogs").setAttribute("aria-pressed", "true"); }
+    if (isBranch(byId[id])) state.unfold.add(primary(byId[id]));
+    draw(); renderList();
+  }
+  applyState(); openDrawer(id, focusAudit);
+  if (reveal) revealNode(id); else keepVisible(id);
+}
+function setSpacer(px) {
+  spacer = px;
+  if (L) inner.style.width = `${(L.W * scale + spacer).toFixed(0)}px`;
+}
+function keepVisible(id) {
+  const p = id === seed.id ? { x: L.seedX } : L.pos[id];
+  if (!p || mapsec.classList.contains("list")) return;
+  const covered = window.innerWidth > 640 && !drawer.hidden ? drawer.offsetWidth : 0;
+  setSpacer(covered);
+  const view = scroller.clientWidth - covered;
+  const x = p.x * scale - scroller.scrollLeft;
+  if (x < 40 || x > view - 60) scroller.scrollTo({ left: Math.max(0, p.x * scale - view / 2), behavior: reduceMotion ? "auto" : "smooth" });
+}
+function focusLane(l, reveal) {
+  state.lane = state.lane === l ? null : l; state.selected = null; closeDrawer(); applyState();
+  if (reveal && state.lane) { setView("map"); mapsec.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" }); }
+}
+function revealNode(id) {
+  setView("map");
+  const p = id === seed.id ? { x: L.seedX } : L.pos[id];
+  mapsec.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  const covered = window.innerWidth > 640 && !drawer.hidden ? drawer.offsetWidth : 0;
+  setSpacer(covered);
+  if (p) scroller.scrollTo({ left: Math.max(0, p.x * scale - (scroller.clientWidth - covered) / 2), behavior: reduceMotion ? "auto" : "smooth" });
+}
+
+/* drawer */
+const drawer = $("#drawer");
+let lastFocus = null;
+function relItem(e, otherId) {
+  const R = relOf(e.type);
+  const ev = e.evidence ? (e.evidence_kind === "paraphrase" ? `<p class="para">${esc(e.evidence)}</p>` : `<blockquote>“${esc(e.evidence)}”</blockquote>`) : "";
+  const src = [e.confidence === "stated" ? "Stated in the source" : "Inferred", e.evidence_source].filter(Boolean).join(" · ");
+  return `<li class="rel"><div class="rel-head"><span class="rtype t-${esc(e.type)}">${lineSample(e.type, 24)}${esc(R.label)}</span>${chip(otherId)}</div><p class="rel-label">${esc(e.label)}</p>${ev}<p class="rel-meta">${esc(src)}</p></li>`;
+}
+function openDrawer(id, focusAudit) {
+  const n = workOf(id); if (!n) return;
+  const onMap = !!byId[id], c = n.card || {};
+  const inc = onMap ? edges.filter((e) => e.target === id) : [], out = onMap ? edges.filter((e) => e.source === id) : [];
+  const raised = onMap ? (G.problems || []).filter((p) => (p.raised_by || []).includes(id)) : [];
+  const solved = onMap ? (G.problems || []).filter((p) => (p.addressed_by || []).includes(id)) : [];
+  const claimedP = onMap ? (G.problems || []).filter((p) => (p.claimed_by || []).includes(id)) : [];
+  if (!drawer.contains(document.activeElement)) lastFocus = document.activeElement;
+  drawer.style.setProperty("--c", onMap ? colorOf(primary(n)) : "var(--muted)");
+  drawer.innerHTML = `
+    <div class="dr-top"><span class="pill">${esc(n.kind || "paper")}</span><span class="pill">${onMap ? esc(ROLE_LABEL[n.role] || n.role || "") : "Not on the map"}</span>${n.gates && n.gates.fold ? `<span class="pill">Did not pass the gates</span>` : ""}<button type="button" class="dr-close" aria-label="Close details">×</button></div>
+    <p class="dr-date">${esc(fmtDate(n.date))}${n.venue ? " · " + esc(n.venue) : ""}${n.citations ? " · " + Number(n.citations).toLocaleString() + " citations" : ""}</p>
+    <h2 class="dr-title">${esc(n.title)}</h2>
+    <p class="dr-auth">${esc(n.authors || "")}</p>
+    ${c.summary ? `<p class="dr-sum">${esc(c.summary)}</p>` : ""}
+    <dl class="card3">
+      ${c.inherits ? `<div><dt>Inherits</dt><dd>${esc(c.inherits)}</dd></div>` : ""}
+      ${c.move ? `<div><dt>Move</dt><dd>${esc(c.move)}</dd></div>` : ""}
+      ${c.insight ? `<div><dt>Key insight</dt><dd>${esc(c.insight)}</dd></div>` : ""}
+      ${(c.leaves || []).length ? `<div><dt>Leaves open</dt><dd><ul>${c.leaves.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></dd></div>` : ""}
+    </dl>
+    ${onMap ? `<div class="tchips">${(n.threads || []).map((t) => tchip(t)).join("")}</div>` : (n.near ? `<p class="dr-auth">Considered next to ${chip(n.near)}${n.reason ? ": " + esc(n.reason) : ""}. It was audited but did not fit the map's budget.</p>` : "")}
+    ${inc.length ? `<h3>Builds on</h3><ul class="rels">${inc.map((e) => relItem(e, e.source)).join("")}</ul>` : ""}
+    ${out.length ? `<h3>Led to</h3><ul class="rels">${out.map((e) => relItem(e, e.target)).join("")}</ul>` : ""}
+    ${solved.length ? `<h3>Problems it addresses</h3><ul class="probs-dr">${solved.map((p) => `<li><span class="ps addressed">${esc(p.id)}</span> ${esc(p.text)}</li>`).join("")}</ul>` : ""}
+    ${claimedP.length ? `<h3>Problems it claims but does not solve</h3><ul class="probs-dr">${claimedP.map((p) => `<li><span class="ps claimed">${esc(p.id)}</span> ${esc(p.text)}</li>`).join("")}</ul>` : ""}
+    ${raised.length ? `<h3>Problems it leaves</h3><ul class="probs-dr">${raised.map((p) => `<li><span class="ps ${esc(p.status)}">${esc(p.id)}</span> ${esc(p.text)}</li>`).join("")}</ul>` : ""}
+    ${n.gates ? `<div id="dr-gates">${gBlock(n)}</div>` : ""}
+    ${n.assessment ? `<div id="dr-audit">${auBlock(n)}</div>` : ""}
+    ${RATE.on && (n.kind || "paper") === "paper" ? `<div class="rate" data-node="${esc(n.id)}">${rateBlock(n)}</div>` : ""}
+    ${n.url ? `<a class="src" href="${esc(n.url)}" target="_blank" rel="noopener">Open the source ↗</a>` : ""}`;
+  drawer.hidden = false; drawer.scrollTop = 0;
+  $(".dr-close", drawer).focus({ preventScroll: true });
+  if (focusAudit && $("#dr-audit", drawer)) drawer.scrollTop = Math.max(0, $("#dr-audit", drawer).offsetTop - 12);
+  auSel = id; markAuSel();
+  applyState();
+}
+function closeDrawer() {
+  if (drawer.hidden) return;
+  drawer.hidden = true;
+  auSel = null; markAuSel();
+  setSpacer(0);
+  updateFades();
+  if (lastFocus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: true });
+}
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") { if (!drawer.hidden) { state.selected = null; closeDrawer(); applyState(); } else if (state.lane) clearFocus(); } });
+document.addEventListener("click", (ev) => {
+  const au = ev.target.closest("[data-audit]");
+  if (au) { ev.preventDefault(); openFromAudit(au.getAttribute("data-audit")); return; }
+  const m = ev.target.closest(".mention[data-node]");
+  if (m) { ev.preventDefault(); select(m.getAttribute("data-node"), !m.closest("#mapscroll")); return; }
+  const uf = ev.target.closest("[data-unfold]");
+  if (uf) {
+    ev.preventDefault();
+    const l = uf.getAttribute("data-unfold");
+    if (state.allFolded) { state.allFolded = false; state.unfold.clear(); laneOrder.forEach((x) => { if (x !== l) state.unfold.add(x); }); syncFolded(); }
+    else if (state.unfold.has(l)) state.unfold.delete(l); else state.unfold.add(l);
+    draw(); renderList(); return;
+  }
+  const lane = ev.target.closest("[data-lane]");
+  if (lane) { ev.preventDefault(); focusLane(lane.getAttribute("data-lane"), !lane.closest("#map")); return; }
+  if (ev.target.closest(".dr-close")) { state.selected = null; closeDrawer(); applyState(); return; }
+  if (ev.target.closest("[data-clear]")) { clearFocus(); return; }
+  const row = ev.target.closest("tr[data-node]");
+  if (row) { select(row.getAttribute("data-node")); }
+});
+
+/* controls */
+$("#rel-toggles").insertAdjacentHTML("beforeend", Object.keys(REL).filter((t) => edges.some((e) => e.type === t)).map((t) =>
+  `<button type="button" class="tog" data-rel="${t}" aria-pressed="true" title="Show or hide “${esc(relOf(t).label.toLowerCase())}” links">${lineSample(t)}${esc(relOf(t).label)}</button>`).join(""));
+$("#rel-toggles").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-rel]"); if (!b) return;
+  const t = b.getAttribute("data-rel");
+  if (state.hidden.has(t)) state.hidden.delete(t); else state.hidden.add(t);
+  b.setAttribute("aria-pressed", String(!state.hidden.has(t)));
+  applyState();
+});
+const hasWeb = nodes.some((n) => n.kind !== "paper");
+if (!hasWeb) $("#t-blogs").hidden = true;
+$("#t-blogs").addEventListener("click", () => {
+  state.blogs = !state.blogs; $("#t-blogs").setAttribute("aria-pressed", String(state.blogs));
+  if (!state.blogs && state.selected && byId[state.selected].kind !== "paper") { state.selected = null; closeDrawer(); }
+  draw(); renderList();
+});
+const setFolded = (show) => { state.allFolded = show; state.unfold.clear(); syncFolded(); draw(); renderList(); };
+$("#f-hide").addEventListener("click", () => setFolded(false));
+$("#f-show").addEventListener("click", () => setFolded(true));
+$("#t-fit").addEventListener("click", () => { state.fit = $("#t-fit").getAttribute("aria-pressed") !== "true"; draw(); });
+function setView(v) {
+  mapsec.classList.toggle("list", v === "list");
+  $("#v-map").setAttribute("aria-pressed", String(v === "map")); $("#v-list").setAttribute("aria-pressed", String(v === "list"));
+}
+$("#v-map").addEventListener("click", () => setView("map"));
+$("#v-list").addEventListener("click", () => setView("list"));
+
+function renderList() {
+  $("#list-body").innerHTML = nodes.filter(visible).map((n) => {
+    const k = edges.filter((e) => e.source === n.id || e.target === n.id).length;
+    return `<tr data-node="${esc(n.id)}" style="cursor:pointer"><td class="num">${esc(n.date)}</td><td><div class="wtitle">${chip(n.id)}</div><div class="wsub">${esc(n.title)} · ${esc(n.authors || "")}</div></td><td>${(n.threads || []).slice(0, 2).map((t) => tchip(t)).join(" ")}</td><td>${esc(ROLE_LABEL[n.role] || n.role || "")}${n.gates ? `<div style="margin-top:4px">${verdictPill(n.gates.verdict)}</div>` : ""}</td><td class="num">${k}</td></tr>`;
+  }).join("");
+}
+
+/* ---------- threads ---------- */
+$("#threadrows").innerHTML = laneOrder.map((tid) => {
+  const t = tById[tid]; const f = fById[t.force];
+  const rungs = ((t.ladder || {}).rungs || []);
+  const ps = (G.problems || []).filter((p) => (t.problems || []).includes(p.id));
+  const rk = (r) => r.kind === "symptom" ? "Symptom" : r.kind === "root" ? `Root · ${esc(ROOT_LABEL[(t.ladder || {}).root_type] || "")}` : "Why?";
+  return `<article class="thread" id="thread-${esc(tid)}" style="--c:${colorOf(tid)}">
+    <div class="th-meta">
+      <div class="th-kicker"><span class="sw"></span>${esc(tid)}${f ? " · " + esc(f.name) : ""}</div>
+      <h3>${esc(t.name)}</h3>
+      <p class="th-q">${esc(t.question)}</p>
+      <p><span class="status ${statusClass(t.status)}">${esc(t.status)}</span></p>
+      ${t.status_note ? `<p class="th-note">${esc(t.status_note)}</p>` : ""}
+      <p>${tchip(tid, "ghost").replace(esc(t.name), "Show on map")}</p>
+    </div>
+    <ol class="ladder" style="--n:${Math.max(1, rungs.length)}">${rungs.map((r) => `<li class="rung k-${esc(r.kind)}"><span class="rk">${rk(r)}</span><p>${esc(r.text)}</p></li>`).join("")}</ol>
+    ${ps.length ? `<details class="probs"><summary>Problem ledger for this thread · ${ps.length}</summary><ul>${ps.map((p) => `<li><span class="ps ${esc(p.status)}">${esc(p.status)}</span><span>${esc(p.text)}</span><span class="pwho">${(p.raised_by || []).length ? "Raised by " + p.raised_by.map(chip).join(" ") : "Identified by the work that solved it"}${(p.addressed_by || []).length ? " <span aria-hidden=\"true\">→</span> addressed by " + p.addressed_by.map(chip).join(" ") : ""}${(p.claimed_by || []).length ? " · claimed, not delivered, by " + p.claimed_by.map(chip).join(" ") : ""}</span></li>`).join("")}</ul></details>` : ""}
+  </article>`;
+}).join("");
+
+/* ---------- story ---------- */
+$("#s-body").innerHTML = ((G.story || {}).paragraphs || []).map((p) => `<p>${withMentions(p)}</p>`).join("");
+const ko = field.knock_on || [];
+$("#s-knock").innerHTML = ko.map((k) => `<li><div class="ko-path">${tchip(k.from_thread)}${k.to_thread !== k.from_thread ? ` <span aria-hidden="true">→</span> ${tchip(k.to_thread)}` : ""}</div><p>${esc(k.text)}</p><span class="via">via ${chip(k.via)}</span></li>`).join("") || "<li>None recorded.</li>";
+$("#s-open").innerHTML = (field.open_problems || []).map((p) => `<li>${esc(p)}</li>`).join("");
+
+/* ---------- check ---------- */
+const chk = G.check || {};
+const cov = chk.coverage || { fit: nodes.length, total: nodes.length };
+$("#c-cover").innerHTML = `<span class="big">${esc(cov.fit)}<span style="color:var(--muted)">/${esc(cov.total)}</span></span><p>works explained by at least one driving force.</p>${(chk.misfits || []).length ? `<p><b>Misfits:</b></p><ul>${chk.misfits.map((m) => `<li>${chip(m.id)} ${esc(m.why)}</li>`).join("")}</ul>` : `<p>No work on the map is left unexplained.</p>`}${chk.cutoff ? `<p class="num" style="color:var(--muted)">Prediction cutoff: ${esc(fmtDate(chk.cutoff))}</p>` : ""}`;
+const predRow = (p) => {
+  const any = (p.matched || []).length || (p.outside || []).length;
+  const vague = any && p.hit === false;
+  const tag = !any ? `<span class="miss">No later match</span>` : vague ? `<span class="miss">Too vague to count</span>` : `<span class="hit">Realised</span>`;
+  const out = (p.outside || []).length ? `<div class="wsub">outside the map: ${p.outside.map(esc).join("; ")}</div>` : "";
+  return `<tr><td>${esc(p.text)}</td><td>${tag} ${(p.matched || []).filter((x) => byId[x]).map(chip).join(" ")}${out}${p.evidence ? `<div class="wsub">${esc(p.evidence)}</div>` : ""}</td></tr>`;
+};
+$("#c-preds").innerHTML = (chk.predictions || []).map(predRow).join("")
+  + ((chk.baseline || []).length ? `<tr><th colspan="2">Without the forces, from the same early works (baseline)</th></tr>` + chk.baseline.map(predRow).join("") : "");
+$("#c-note").textContent = chk.note || "";
+
+/* ---------- method ---------- */
+$("#r-body").innerHTML = (G.rounds || []).map((r) => `<tr><td class="num">${esc(r.round)}</td><td>${(r.expanded || []).length ? r.expanded.filter((x) => byId[x]).map(chip).join(" ") : (r.round === 0 ? chip(seed.id) : "—")}</td><td class="num">${esc(r.kept)}</td><td class="num">${esc(r.new_problems)}</td><td class="num">${esc(r.addressed)}</td><td>${esc(r.note || "")}</td></tr>`).join("");
+$("#l-body").innerHTML = (G.problems || []).map((p) => `<tr><td class="num">${esc(p.id)}</td><td>${esc(p.text)} <span class="ps ${esc(p.status)}">${esc(p.status)}</span></td><td>${p.thread ? tchip(p.thread) : ""}</td><td>${(p.raised_by || []).map(chip).join(" ") || "—"}</td><td>${(p.addressed_by || []).map(chip).join(" ") || "—"}${(p.claimed_by || []).length ? `<div class="wsub">claimed, not delivered: ${p.claimed_by.map(chip).join(" ")}</div>` : ""}</td></tr>`).join("");
+$("#r-meta").innerHTML = [["Seed", `${seed.title} (${meta.seed_ref || ""})`], ["Generated", meta.generated_at], ["Generator", meta.generator], ["Model", meta.model], ["Budget", meta.budget ? `${meta.budget} works` : ""], ["Field limit", meta.scope], ["Sources", (meta.sources || []).join(", ")], ["Usage", meta.usage]]
+  .filter((r) => r[1]).map((r) => `<dt>${esc(r[0])}</dt><dd>${esc(r[1])}</dd>`).join("");
+$("#foot").textContent = `${meta.generator || "Taste-Calibrated Research"} · ${field.name || ""}`;
+
+/* ---------- borrowed from other fields (only with a field limit) ---------- */
+const BORROWED = (G.imports || []).filter((w) => w && w.title);
+if (BORROWED.length) {
+  $("#borrowed").hidden = false;
+  $("#b-scope").textContent = meta.scope || "";
+  const link = (w) => /^https?:\/\//.test(w.url || "") ? `<a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a>` : esc(w.title);
+  $("#b-list").innerHTML = BORROWED.map((w) => {
+    const who = (w.used_by || []).filter((x) => byId[x]).map(chip).join(" ");
+    const verb = w.direction === "forward" ? "builds on" : "used by";
+    return `<li>${link(w)} (${esc(w.year || "?")})${w.field ? ` · ${esc(w.field)}` : ""}${who ? `<span class="bwho"> · ${verb} ${who}</span>` : ""}${w.how ? `<span class="bwho">: ${esc(w.how)}</span>` : ""}</li>`;
+  }).join("");
+}
+
+/* ---------- audit ---------- */
+const FLAG_ORDER = ["hidden-gem", "overhyped", "skip", "too-early", "fair"];
+const FLAG_COLOR = { "hidden-gem": "var(--ok)", overhyped: "var(--challenge)", skip: "var(--muted)", fair: "var(--ink-2)", "too-early": "var(--warn)" };
+const FLAG_LABEL = Object.assign({ "hidden-gem": "Possible hidden gem", overhyped: "Possibly overhyped", skip: "Safe to skip", fair: "Fairly valued", "too-early": "Too early to tell" }, (AU && AU.labels) || {});
+const FLAG_DESC = {
+  "hidden-gem": "Little noticed, yet the blind score and the judge both found a substantial contribution.",
+  overhyped: "Widely noticed, yet the evidence supports only a modest or negligible contribution.",
+  skip: "Low contribution on the evidence. A newcomer can skip these without losing the thread.",
+  "too-early": "Too recent for attention or uptake to mean much yet.",
+};
+const ROLES_ORDER = ["builds_on", "contrasts", "baseline", "uses", "mentions", "not_cited"];
+const ROLE_TXT = { builds_on: "builds on", contrasts: "engages", baseline: "baseline", uses: "uses", mentions: "mentions", not_cited: "not cited" };
+const BASIS = { "citations+stars": "citations and GitHub stars per year", citations: "citations per year", stars: "GitHub stars per year, because the citation count is undercounted" };
+const flagPill = (f) => `<span class="flag" style="--fc:${FLAG_COLOR[f] || "var(--ink-2)"}">${esc(FLAG_LABEL[f] || f)}</span>`;
+const pct100 = (t) => (t && t.pct != null ? `${t.lower_bound ? "≥\u2009" : ""}${Math.round(t.pct * 100)}` : "–");
+const score2 = (x) => (x == null ? "–" : Number(x).toFixed(2));
+const assessed = [...nodes, ...pool].filter((w) => w.assessment);
+let auSel = null;
+const auChip = (w) => `<button type="button" class="mention${byId[w.id] ? "" : " pool"}" data-audit="${esc(w.id)}" style="--c:${byId[w.id] ? colorOf(primary(w)) : "var(--muted)"}"><i aria-hidden="true"></i>${esc(w.short || w.id)}</button>`;
+const judgeOf = (a) => (a.review && a.review.judge) || null;
+
+function auBlock(w) {
+  const a = w.assessment; if (!a) return "";
+  const c = a.contribution || {}, t = a.attention || {}, ev = a.evidence || {}, rv = a.review, j = judgeOf(a) || {};
+  const bar = (label, v, main, txt) => `<div class="bar${main ? " main" : ""}"><span>${esc(label)}</span><span class="track"><i style="width:${Math.round(Math.max(0, Math.min(1, v || 0)) * 100)}%"></i></span><span class="num">${txt != null ? txt : score2(v)}</span></div>`;
+  const raw = [t.citations != null ? `${t.citations_lower_bound ? "at least " : ""}${Number(t.citations).toLocaleString()} citations` : "", t.stars != null ? `${Number(t.stars).toLocaleString()} GitHub stars${t.stars_shared_with ? " (repository shared with another work)" : ""}` : ""].filter(Boolean).join(", ");
+  const counts = ev.uptake_counts || (ev.uptake || []).reduce((m, u) => { m[u.role] = (m[u.role] || 0) + 1; return m; }, {});
+  const list = (xs, f) => `<ul>${xs.map(f).join("")}</ul>`;
+  return `<h3>Audit</h3><div class="au-dr" style="--fc:${FLAG_COLOR[a.flag]}">
+    <div class="row1" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">${flagPill(a.flag)}${a.candidate && a.flag !== a.candidate ? `<span class="small">flagged as ${esc((FLAG_LABEL[a.candidate] || "").toLowerCase())}, cleared on review</span>` : ""}</div>
+    ${a.why ? `<p class="why">${esc(a.why)}</p>` : ""}
+    <div class="bars">
+      ${a.your_scale != null ? bar("On your scale", a.your_scale, true) : ""}
+      ${bar("Contribution", c.score, true)}${bar("novelty", c.novelty)}${bar("significance", c.significance)}${bar("evidence", c.evidence)}${bar("uptake", c.uptake)}
+      ${bar("Attention", t.pct, true, pct100(t))}
+    </div>
+    <p class="small" style="margin-top:6px">Attention is a percentile of ${esc(BASIS[t.basis] || t.basis || "")}, among the works assessed${t.lower_bound ? "; this one is a lower bound" : ""}.${raw ? " Counts: " + esc(raw) + "." : ""}</p>
+    ${c.rationale ? `<p class="small">Blind scorer: ${esc(c.rationale)}</p>` : ""}
+    ${rv ? `<details open><summary>Adversarial review</summary>
+      <div class="side adv"><b>Advocate</b><p>${esc((rv.advocate || {}).case || "")}</p></div>
+      <div class="side crit"><b>Critic</b><p>${esc((rv.critic || {}).case || "")}</p></div>
+      <div class="side judge"><b>Judge · ${esc(j.verdict || "")} · ${esc(j.confidence || "")} confidence</b>${(j.reasons || []).length ? list(j.reasons, (r) => `<li>${esc(r)}</li>`) : ""}${j.would_change ? `<p class="small">Would change the verdict: ${esc(j.would_change)}</p>` : ""}</div>
+    </details>` : ""}
+    ${(ev.claims || []).length ? `<details><summary>Claims and how well they hold · ${ev.claims.length}</summary>${list(ev.claims, (x) => `<li><span class="sup ${esc(x.support)}">${esc(x.support)}</span>${esc(x.claim)}<br><span class="small">${esc(x.evidence)}</span></li>`)}${(ev.fairness_notes || []).length ? `<p class="small" style="margin-top:6px;font-weight:700">Fairness notes</p>${list(ev.fairness_notes, (x) => `<li class="small">${esc(x)}</li>`)}` : ""}</details>` : ""}
+    ${(ev.precedents || []).length ? `<details><summary>Earlier work with a similar idea · ${ev.precedents.length}</summary>${list(ev.precedents, (p) => `<li><span class="sup ${p.overlap === "same idea" ? "unsupported" : "partial"}">${esc(p.overlap)}</span>${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>` : esc(p.title)} (${esc(p.year || "?")})${p.cited_by_target === false ? ` <span class="small">· not cited by this work</span>` : ""}<br><span class="small">${esc(p.note || "")}</span></li>`)}</details>` : ""}
+    ${(ev.uptake || []).length ? `<details><summary>What later papers do with it</summary><p class="small" style="margin-top:6px">${ROLES_ORDER.filter((r) => counts[r]).map((r) => `${esc(ROLE_TXT[r])} ${counts[r]}`).join(" · ")}${ev.uptake_basis ? ". " + esc(ev.uptake_basis) : ""}</p>${list(ev.uptake, (u) => `<li><span class="sup ${esc(u.role)}">${esc(ROLE_TXT[u.role] || u.role)}</span>${esc(u.citer)}${u.sentence ? `<br><span class="small">“${esc(u.sentence)}”</span>` : ""}</li>`)}</details>` : ""}
+    ${(ev.later_challenges || []).length ? `<details><summary>Later evidence against it · ${ev.later_challenges.length}</summary>${list(ev.later_challenges, (x) => `<li>${esc(x)}</li>`)}</details>` : ""}
+    ${ev.notes ? `<details><summary>Notes</summary><p class="small" style="margin-top:6px">${esc(ev.notes)}</p></details>` : ""}
+  </div>`;
+}
+
+function openFromAudit(id) {
+  if (byId[id]) { select(id, false, true); return; }
+  if (!poolById[id]) return;
+  state.selected = null; applyState(); openDrawer(id, true);
+}
+function markAuSel() { $$(".pt", auSvg).forEach((g) => g.classList.toggle("sel", g.getAttribute("data-audit") === auSel)); }
+
+const auSvg = $("#auplot");
+function drawAudit() {
+  if (!AU || !assessed.length) return;
+  const th = AU.thresholds || {};
+  const W = Math.max(300, (auSvg.parentNode.clientWidth || 640) - 20);
+  const H = Math.round(Math.min(520, Math.max(320, W * 0.8)));
+  const m = { l: 46, r: 14, t: 14, b: 48 };
+  const X = (v) => m.l + Math.max(0, Math.min(1, v)) * (W - m.l - m.r);
+  const Y = (v) => H - m.b - Math.max(0, Math.min(1, v)) * (H - m.t - m.b);
+  auSvg.setAttribute("viewBox", `0 0 ${W} ${H}`); auSvg.setAttribute("width", W); auSvg.setAttribute("height", H);
+  auSvg.textContent = "";
+  const aL = th.attn_low ?? 0.4, aH = th.attn_high ?? 0.6, cL = th.contrib_low ?? 0.45, cH = th.contrib_high ?? 0.6;
+  const g0 = el("g", {}, auSvg);
+  el("rect", { x: X(0), y: Y(1), width: X(aL) - X(0), height: Y(cH) - Y(1), class: "q-zone gem" }, g0);
+  el("rect", { x: X(aH), y: Y(cL), width: X(1) - X(aH), height: Y(0) - Y(cL), class: "q-zone hyped" }, g0);
+  [aL, aH].forEach((v) => el("line", { x1: X(v), x2: X(v), y1: Y(0), y2: Y(1), class: "q-line" }, g0));
+  [cL, cH].forEach((v) => el("line", { x1: X(0), x2: X(1), y1: Y(v), y2: Y(v), class: "q-line" }, g0));
+  el("line", { x1: X(0), x2: X(1), y1: Y(0), y2: Y(0), class: "ax" }, g0);
+  el("line", { x1: X(0), x2: X(0), y1: Y(0), y2: Y(1), class: "ax" }, g0);
+  [0, 0.25, 0.5, 0.75, 1].forEach((v) => {
+    const tx = el("text", { x: X(v), y: Y(0) + 16, "text-anchor": v === 0 ? "start" : v === 1 ? "end" : "middle", class: "ax-t" }, g0); tx.textContent = Math.round(v * 100);
+    const ty = el("text", { x: X(0) - 6, y: Y(v) + 4, "text-anchor": "end", class: "ax-t" }, g0); ty.textContent = v.toFixed(2).replace(/0$/, "").replace(/\.$/, "");
+  });
+  const xl = el("text", { x: X(0.5), y: H - 10, "text-anchor": "middle", class: "ax-l" }, g0); xl.textContent = "Attention → (percentile within this set)";
+  const yl = el("text", { x: 14, y: Y(0.5), "text-anchor": "middle", class: "ax-l", transform: `rotate(-90 14 ${Y(0.5)})` }, g0); yl.textContent = "Contribution → (blind score)";
+  const ql = (txt, x, y, anchor) => { const t = el("text", { x, y, "text-anchor": anchor, class: "q-label" }, g0); t.textContent = txt; };
+  ql("Hidden gem?", X(0) + 8, Y(1) + 14, "start"); ql("Classic", X(1) - 8, Y(1) + 14, "end");
+  ql("Overhyped?", X(1) - 8, Y(0) - 8, "end"); ql("Noise", X(0) + 8, Y(0) - 8, "start");
+
+  const isFlag = (w) => w.assessment.flag !== "fair";
+  const order = assessed.slice().sort((p, q) => (isFlag(p) - isFlag(q)) || ((p.assessment.attention || {}).pct - (q.assessment.attention || {}).pct));
+  const obstacles = [];
+  const pts = order.map((w) => {
+    const a = w.assessment, x = X((a.attention || {}).pct || 0), y = Y((a.contribution || {}).score || 0), r = isFlag(w) ? 6.5 : 5;
+    obstacles.push({ x0: x - r - 1, x1: x + r + ((a.attention || {}).lower_bound ? 16 : 1), y0: y - r - 1, y1: y + r + 1, id: w.id });
+    return { w, a, x, y, r };
+  });
+  const gP = el("g", {}, auSvg);
+  pts.forEach(({ w, a, x, y, r }) => {
+    const g = el("g", { class: `pt${isFlag(w) ? " flagged" : ""}${byId[w.id] ? "" : " pool"}`, style: `--fc:${FLAG_COLOR[a.flag]}`, tabindex: 0, role: "button", "data-audit": w.id,
+      "aria-label": `${w.short}: ${FLAG_LABEL[a.flag]}, contribution ${score2(a.contribution.score)}, attention ${pct100(a.attention)}` }, gP);
+    if ((a.attention || {}).lower_bound) {
+      el("line", { x1: x + r + 1, x2: x + r + 12, y1: y, y2: y, class: "lb" }, g);
+      el("path", { d: `M${x + r + 15},${y} l-5,-3.5 l0,7 z`, class: "lbh" }, g);
+    }
+    el("circle", { cx: x, cy: y, r }, g);
+  });
+  // Direct labels: flagged works first, then the rest, wherever a label fits without overlap.
+  const placed = [];
+  const hits = (b) => b.x0 < X(0) + 2 || b.x1 > X(1) + 2 || b.y0 < Y(1) - 4 || b.y1 > Y(0) - 2
+    || placed.some((o) => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0)
+    || obstacles.some((o) => o.id !== b.id && b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0);
+  pts.slice().reverse().forEach(({ w, a, x, y, r }) => {
+    const txt = w.short || w.id, tw = txt.length * 6.3 + 2, lb = (a.attention || {}).lower_bound ? 15 : 0;
+    const cands = [
+      { tx: x + r + 4 + lb, ty: y + 4, an: "start", b: { x0: x + r + 3 + lb, x1: x + r + 4 + lb + tw, y0: y - 7, y1: y + 6 } },
+      { tx: x - r - 4, ty: y + 4, an: "end", b: { x0: x - r - 4 - tw, x1: x - r - 3, y0: y - 7, y1: y + 6 } },
+      { tx: x, ty: y - r - 5, an: "middle", b: { x0: x - tw / 2, x1: x + tw / 2, y0: y - r - 16, y1: y - r - 3 } },
+      { tx: x, ty: y + r + 13, an: "middle", b: { x0: x - tw / 2, x1: x + tw / 2, y0: y + r + 2, y1: y + r + 15 } },
+      { tx: x + r + 2, ty: y - r - 3, an: "start", b: { x0: x + r + 1, x1: x + r + 2 + tw, y0: y - r - 14, y1: y - r - 1 } },
+      { tx: x - r - 2, ty: y - r - 3, an: "end", b: { x0: x - r - 2 - tw, x1: x - r - 1, y0: y - r - 14, y1: y - r - 1 } },
+      { tx: x + r + 2, ty: y + r + 11, an: "start", b: { x0: x + r + 1, x1: x + r + 2 + tw, y0: y + r, y1: y + r + 13 } },
+      { tx: x - r - 2, ty: y + r + 11, an: "end", b: { x0: x - r - 2 - tw, x1: x - r - 1, y0: y + r, y1: y + r + 13 } },
+    ];
+    const c = cands.find((k) => !hits(Object.assign({ id: w.id }, k.b)));
+    if (!c) return;
+    placed.push(c.b);
+    const g = $(`.pt[data-audit="${CSS.escape(w.id)}"]`, auSvg);
+    const t = el("text", { x: c.tx, y: c.ty, "text-anchor": c.an }, g); t.textContent = txt;
+  });
+  markAuSel();
+}
+
+function renderAudit() {
+  if (!AU || !assessed.length) return;
+  $("#audit").hidden = false;
+  const counts = {}; assessed.forEach((w) => { counts[w.assessment.flag] = (counts[w.assessment.flag] || 0) + 1; });
+  const reviewed = assessed.filter((w) => w.assessment.review).length;
+  $("#au-facts").innerHTML = [`${assessed.length} works assessed`, pool.length ? `${assessed.length - assessed.filter((w) => !byId[w.id]).length} on the map, ${assessed.filter((w) => !byId[w.id]).length} not` : "", `${reviewed} argued over by advocate, critic and judge`]
+    .filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join("");
+  $("#au-legend").innerHTML = FLAG_ORDER.filter((f) => counts[f]).map((f) => `<span><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="${f === "fair" ? "var(--surface)" : FLAG_COLOR[f]}" stroke="${FLAG_COLOR[f]}" stroke-width="2"/></svg>${esc(FLAG_LABEL[f])} · ${counts[f]}</span>`).join("")
+    + (pool.length ? `<span><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="2.4 1.8"/></svg>Not on the map</span>` : "")
+    + (assessed.some((w) => (w.assessment.attention || {}).lower_bound) ? `<span><svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="15" y2="5" stroke="var(--ink-2)" stroke-width="1.4"/><path d="M20,5 l-5,-3.5 l0,7 z" fill="var(--ink-2)"/></svg>Attention is a lower bound</span>` : "");
+  const sortIn = (f) => (p, q) => {
+    const a = p.assessment, b = q.assessment;
+    if (f === "overhyped") return b.attention.pct - a.attention.pct;
+    if (f === "skip") return a.contribution.score - b.contribution.score;
+    return b.contribution.score - a.contribution.score;
+  };
+  const groups = FLAG_ORDER.filter((f) => f !== "fair" && counts[f]);
+  $("#au-lists").innerHTML = groups.length ? groups.map((f) => {
+    const items = assessed.filter((w) => w.assessment.flag === f).sort(sortIn(f));
+    return `<div class="fl"><h3>${flagPill(f)}<span class="scores">${items.length}</span></h3><p>${esc(FLAG_DESC[f] || "")}</p><ul>${items.map((w) => {
+      const a = w.assessment, j = judgeOf(a);
+      return `<li><div class="row1">${auChip(w)}<span class="scores">${esc(fmtDate(w.date))}</span>${byId[w.id] ? "" : `<span class="offmap">not on the map</span>`}</div>${a.why ? `<p class="why">${esc(a.why)}</p>` : ""}<span class="scores">contribution ${score2(a.contribution.score)} · attention ${pct100(a.attention)}/100${j ? ` · judge: ${esc(j.verdict)}` : ""}</span></li>`;
+    }).join("")}</ul></div>`;
+  }).join("") : `<p class="why">No work was flagged: on this evidence every assessed work is fairly valued.</p>`;
+  const all = assessed.slice().sort((p, q) => FLAG_ORDER.indexOf(p.assessment.flag) - FLAG_ORDER.indexOf(q.assessment.flag) || q.assessment.contribution.score - p.assessment.contribution.score);
+  $("#au-all-sum").textContent = `All ${all.length} assessed works`;
+  $("#au-all").innerHTML = all.map((w) => { const a = w.assessment, j = judgeOf(a); return `<tr><td><div class="wtitle">${auChip(w)}</div><div class="wsub">${esc(w.title)}</div></td><td>${flagPill(a.flag)}</td><td class="num">${score2(a.contribution.score)}${a.your_scale != null ? `<div class="small"> · yours ${score2(a.your_scale)}</div>` : ""}</td><td class="num">${pct100(a.attention)}</td><td>${j ? esc(j.verdict) : "—"}</td><td style="min-width:260px">${esc(a.why || "")}</td></tr>`; }).join("");
+  $("#au-method").textContent = AU.method || "";
+  $("#au-process").textContent = AU.process || "";
+  $("#au-caveats").innerHTML = (AU.caveats || []).map((c) => `<li>${esc(c)}</li>`).join("");
+  const CAL = AU.calibration;
+  if (CAL && (CAL.anchors || []).length) {
+    const used = CAL.anchors.filter((r) => r.blind != null);
+    const head = CAL.usable
+      ? `<p>Calibrated on ${used.length} papers you rated. Their blind scores and your ratings put ${CAL.agree} of ${CAL.pairs} pairs in the same order. Each work also shows its blind score on your scale. The blind score itself is unchanged.</p>`
+      : `<p>You rated ${used.length} papers that could be scored. That is too few, or their blind scores do not rise with your ratings (${CAL.agree} of ${CAL.pairs} pairs in the same order). So no work is put on your scale.</p>`;
+    const rows = CAL.anchors.map((r) => `<tr><td>${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.ref)}</a>` : esc(r.title || r.ref)}${r.on_map && byId[r.on_map] ? " " + chip(r.on_map) : ""}${r.found === false ? ` <span class="small">not found</span>` : ""}${r.basis ? `<div class="small">read from the ${esc(r.basis)}${r.source ? ` (${esc(r.source)})` : ""}</div>` : ""}</td><td class="num">${score2(r.yours)}</td><td class="num">${r.blind != null ? score2(r.blind) : "—"}</td></tr>`).join("");
+    $("#au-calib").innerHTML = `<h3>On your scale</h3>${head}<table><thead><tr><th>Paper you rated</th><th class="num">Yours</th><th class="num">Blind</th></tr></thead><tbody>${rows}</tbody></table>`;
+    $("#au-calib").hidden = false;
+  }
+  drawAudit();
+}
+auSvg.addEventListener("pointerover", (ev) => {
+  if (ev.pointerType && ev.pointerType !== "mouse") return;
+  const g = ev.target.closest(".pt"); if (!g) return;
+  const w = workOf(g.getAttribute("data-audit")); const a = w.assessment;
+  tip.innerHTML = `<span class="tm">${esc(FLAG_LABEL[a.flag])}${byId[w.id] ? "" : " · not on the map"}</span><b>${esc(w.short)}</b><br>contribution ${score2(a.contribution.score)} · attention ${pct100(a.attention)}/100${a.why ? `<br>${esc(a.why)}` : ""}`;
+  tip.hidden = false; moveTip(ev);
+});
+auSvg.addEventListener("pointermove", (ev) => { if (!tip.hidden) moveTip(ev); });
+auSvg.addEventListener("pointerout", (ev) => { if (!ev.relatedTarget || !ev.relatedTarget.closest || !ev.relatedTarget.closest(".pt")) tip.hidden = true; });
+auSvg.addEventListener("keydown", (ev) => { const g = ev.target.closest(".pt"); if (g && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openFromAudit(g.getAttribute("data-audit")); } });
+
+/* ---------- gates ---------- */
+const gated = nodes.filter((n) => n.gates);
+const DLV = { delivered: ["supported", "Delivered"], partial: ["partial", "Partly delivered"], not: ["unsupported", "Not delivered"] };
+const RSN = { proof: ["supported", "Proof"], mechanism: ["supported", "Mechanism"], analogy: ["partial", "Analogy only"], none: ["unsupported", "No reason given"] };
+const RBS = { repeats: ["supported", "Repeats"], single: ["partial", "One setting"], unclear: ["untested", "Unclear"] };
+const LEVER_TXT = { "cost-assumption": "Chosen cost or price ratio", "metric-trained": "Trained on the metric", "unequal-tuning": "Unequal tuning", "mismatched-setup": "Mismatched setup", "small-or-saturated-benchmark": "Small or saturated benchmark", "missing-novelty-ablation": "No ablation of the new idea", other: "Other" };
+const gtag = (pair) => `<span class="sup ${pair[0]}">${esc(pair[1])}</span>`;
+// Deeper checks: a good, bad or unknown tag per row. Values the data uses stay as keys.
+const CK_TXT = { yes: "Yes", no: "No", unclear: "Unclear", unchecked: "Not checked", released: "Released", promised: "Promised", none: "None", unknown: "Unknown" };
+const CK_ROW = { numbers: "Numbers match the tables", fair_baselines: "Fair baselines", novelty_ablation: "Ablation that removes the new idea", code: "Code", fails: "Says when it fails" };
+const CK = {
+  numbers: { match: ["supported", CK_TXT.yes], mismatch: ["unsupported", CK_TXT.no], "not checked": ["untested", CK_TXT.unchecked] },
+  fair_baselines: { yes: ["supported", CK_TXT.yes], no: ["unsupported", CK_TXT.no], unclear: ["untested", CK_TXT.unclear] },
+  novelty_ablation: { yes: ["supported", CK_TXT.yes], no: ["unsupported", CK_TXT.no] },
+  code: { released: ["supported", CK_TXT.released], promised: ["untested", CK_TXT.promised], none: ["unsupported", CK_TXT.none], unknown: ["untested", CK_TXT.unknown] },
+};
+const CK_NOTE = { numbers: "numbers_note", fair_baselines: "baselines_note", novelty_ablation: "ablation_note", code: "code_note" };
+const CK_BAD = [["novelty_ablation", "no", "no ablation"], ["fair_baselines", "no", "unfair baselines"], ["numbers", "mismatch", "numbers differ"], ["code", "none", "no code"]];
+const SOURCE_LABEL = {};
+const ckTag = (k, v) => (v == null ? ["untested", CK_TXT.unchecked] : (CK[k] || {})[v] || ["untested", String(v)]);
+const ckNote = (s) => (/^https?:\/\/\S+$/.test(s) ? `<a href="${esc(s)}" target="_blank" rel="noopener">${esc(s)}</a>` : esc(s));
+function checksBlock(x) {
+  const c = x.checks || null, hasRows = !!c || x.fails_when_stated != null;
+  if (!hasRows && !x.source) return "";
+  const rows = hasRows ? Object.keys(CK).map((k) => {
+    const note = c && c[CK_NOTE[k]];
+    return `<li>${gtag(ckTag(k, c ? c[k] : null))}${esc(CK_ROW[k])}${note ? `<br><span class="small">${ckNote(note)}</span>` : ""}</li>`;
+  }).join("") + `<li>${gtag(x.fails_when_stated == null ? ["untested", CK_TXT.unchecked] : x.fails_when_stated ? ["supported", CK_TXT.yes] : ["unsupported", CK_TXT.no])}${esc(CK_ROW.fails)}</li>` : "";
+  const src = x.source ? `<span class="small">Text read: ${esc(SOURCE_LABEL[x.source] || x.source)}</span>` : "";
+  return `<div><dt>Checks</dt><dd>${rows ? `<ul class="ck">${rows}</ul>` : ""}${src ? (rows ? `<p style="margin-top:8px">${src}</p>` : src) : ""}</dd></div>`;
+}
+const ckBad = (x) => { const c = x.checks || {}; const t = CK_BAD.filter(([k, v]) => c[k] === v); return t.length ? `<div class="ck-tags">${t.map((b) => `<span class="sup unsupported">${esc(b[2])}</span>`).join("")}</div>` : ""; };
+const pl = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+function syncFolded() { $("#f-show").setAttribute("aria-pressed", String(state.allFolded)); $("#f-hide").setAttribute("aria-pressed", String(!state.allFolded)); }
+function fieldLine(x) {
+  const r = x.reaction || {};
+  if (r.too_early) return "Too recent for later work to have reacted.";
+  const parts = [];
+  if ((r.adopted_by || []).length) parts.push(`built on by ${r.adopted_by.map(chip).join(" ")}`);
+  if ((r.challenged_by || []).length) parts.push(`challenged by ${r.challenged_by.map(chip).join(" ")}`);
+  if (r.builds_on_share != null) parts.push(`${Math.round(r.builds_on_share * 100)}% of sampled citers build on it`);
+  return (parts.length ? parts.join("; ") + "." : "No later work on this map builds on it or challenges it.") + (r.robust ? " That counts as robust." : "");
+}
+function gBlock(n) {
+  const x = n.gates; if (!x) return "";
+  const lv = x.levers || [];
+  return `<h3>Gates</h3><div class="au-dr gt-dr">
+    <div class="row1" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">${verdictPill(x.verdict)}${nvBadge(n)}${x.fold ? `<span class="small">dashed on the map</span>` : ""}${x.basis !== "full text" && !x.fold_reason ? `<span class="small">read from the ${esc(x.basis)} only</span>` : ""}</div>
+    ${x.fold_reason ? `<div class="fold-why${x.verdict === "incremental" ? " inc" : ""}"><b>${x.fold ? "Why it is folded" : "Why it would be folded"}</b><p>${esc(x.fold_reason.summary)}</p>${(x.fold_reason.evidence || []).length ? `<ul>${x.fold_reason.evidence.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>` : ""}${x.fold_blocked ? `<p class="small">${esc(x.fold_blocked)}</p>` : ""}</div>` : (x.why ? `<p class="why">${esc(x.why)}</p>` : "")}
+    <dl>
+      <div><dt>0 · Claim vs delivery</dt><dd>${x.claimed ? `<b>Claims:</b> ${esc(x.claimed)}<br>` : ""}${gtag(DLV[x.delivery] || ["untested", x.delivery])}${esc(x.delivered)}${x.delivery_evidence ? `<br><span class="small">${esc(x.delivery_evidence)}</span>` : ""}</dd></div>
+      <div><dt>1 · Reason</dt><dd>${gtag(RSN[x.reason_type] || ["untested", x.reason_type])}${esc(x.reason)}${x.fails_when ? `<br><span class="small">Would not help when: ${esc(x.fails_when)}</span>` : ""}</dd></div>
+      <div><dt>2 · Robustness</dt><dd>${gtag(RBS[x.robustness] || ["untested", x.robustness])}${esc(x.robustness_note)}${lv.length ? `<ul>${lv.map((l) => `<li><b>${esc(LEVER_TXT[l.lever] || l.lever)}</b>${l.note ? ": " + esc(l.note) : ""}</li>`).join("")}</ul>` : ""}</dd></div>
+      <div><dt>3 · Field reaction</dt><dd>${fieldLine(x)}</dd></div>
+      ${checksBlock(x)}
+      ${x.attractiveness != null ? `<div><dt>Taste</dt><dd>${score2(x.attractiveness)}${x.taste_why ? " · " + esc(x.taste_why) : ""}</dd></div>` : ""}
+      ${x.check_next ? `<div><dt>Check next</dt><dd>${esc(x.check_next)}</dd></div>` : ""}
+    </dl></div>`;
+}
+const evid = (n) => { const ev = ((n.gates || {}).fold_reason || {}).evidence || []; return ev.length ? `<ul class="evid">${ev.slice(0, 3).map((e) => `<li>${esc(e)}</li>`).join("")}</ul>` : ""; };
+function gItem(n, extra) {
+  return `<li><div class="row1">${chip(n.id)}<span class="scores">${esc(fmtDate(n.date))}</span>${tchip(primary(n))}${nvBadge(n)}</div>${n.gates.why ? `<p class="why">${esc(n.gates.why)}</p>` : ""}${extra || ""}</li>`;
+}
+labels.addEventListener("pointerover", (ev) => {
+  if (ev.pointerType && ev.pointerType !== "mouse") return;
+  const b = ev.target.closest(".fold-chip"); if (!b) return;
+  const l = b.getAttribute("data-unfold");
+  const fs = nodes.filter((n) => isBranch(n) && primary(n) === l && (state.blogs || n.kind === "paper"));
+  tip.innerHTML = `<span class="tm">Side branches of ${esc(tById[l].name)} · click to ${state.allFolded || state.unfold.has(l) ? "fold them back" : "show them"}</span>` +
+    fs.map((n) => `<div style="margin-top:6px"><b>${esc(n.short)}</b> · ${esc(ROLE_LABEL[n.role] || n.role || "")}<br>${esc((n.card || {}).summary || n.title)}</div>`).join("");
+  tip.hidden = false; moveTip(ev);
+});
+labels.addEventListener("pointermove", (ev) => { if (!tip.hidden && ev.target.closest(".fold-chip")) moveTip(ev); });
+labels.addEventListener("pointerout", (ev) => { if (ev.target.closest(".fold-chip")) tip.hidden = true; });
+function renderGates() {
+  if (!GT || !gated.length) return;
+  $("#gates").hidden = false;
+  const by = (v) => gated.filter((n) => n.gates.verdict === v);
+  const folded = gated.filter((n) => n.gates.fold);
+  const reopened = (G.problems || []).filter((p) => p.status === "claimed");
+  const readOrder = (n) => (n.assessment && n.assessment.your_scale != null ? n.assessment.your_scale : (n.gates.attractiveness || 0));
+  const tr = by("treasure").sort((a, b) => readOrder(b) - readOrder(a) || (a.date || "").localeCompare(b.date || ""));
+  $("#gt-read").innerHTML = `<h3>${verdictPill("treasure")}<span class="scores">${tr.length}</span></h3><p>${GT.taste ? "A stated reason, not yet verified beyond one setting, and close to what you said you want to read." : "A stated reason, not yet verified beyond one setting. Add a taste profile to keep only the ones close to your interests."}${tasteTxt ? " " + esc(tasteTxt) + "." : ""}</p>${tr.length ? `<ul>${tr.map((n) => gItem(n, n.gates.taste_why ? `<span class="scores">taste ${score2(n.gates.attractiveness)} · ${esc(n.gates.taste_why)}</span>` : "")).join("")}</ul>` : `<p class="why" style="margin-top:10px">None on this map.</p>`}`;
+  const TC = GT.taste_check;
+  if (TC && (TC.papers || []).length) {
+    const tcHead = TC.usable
+      ? `<p>Each of the ${TC.n} papers you rated was scored by your taste profile with its own rating taken out. The scores put ${TC.agree} of ${TC.pairs} pairs in your order, and are ${score2(TC.gap)} away from your rating on average.</p>`
+      : `<p>Rate at least 3 papers that can be found to see how well your taste profile predicts you. So far: ${TC.papers.length}.</p>`;
+    const tcRows = TC.papers.map((r) => `<tr><td>${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.ref)}</a>` : esc(r.title || r.ref)}</td><td class="num">${score2(r.yours)}</td><td class="num">${r.predicted != null ? score2(r.predicted) : "—"}</td></tr>`).join("");
+    $("#gt-read").insertAdjacentHTML("beforeend", `<div class="calib"><h3>How well your taste profile predicts you</h3>${tcHead}<table><thead><tr><th>Paper you rated</th><th class="num">Yours</th><th class="num">Predicted</th></tr></thead><tbody>${tcRows}</tbody></table></div>`);
+  }
+  const RN = (GT.rate_next || []).filter((x) => byId[x]);
+  if (RN.length) $("#gt-read").insertAdjacentHTML("beforeend", `<div class="calib"><h3>Rate these next</h3><p>Your ratings teach the report your taste. These works are spread from low to high blind score, so a few ratings go a long way. Open one and give it 1–5.</p><p>${RN.map(chip).join(" ")}</p></div>`);
+  const fv = ["not-delivered", "incremental"].map((v) => ({ v, items: folded.filter((n) => n.gates.verdict === v) })).filter((g) => g.items.length);
+  const reo = reopened.length ? `<div class="fl"><h3>Problems reopened<span class="scores">${reopened.length}</span></h3><p>Their only solutions on this map did not deliver.</p><ul>${reopened.map((p) => `<li><div class="row1"><span class="ps claimed">${esc(p.id)}</span>${p.thread ? tchip(p.thread) : ""}</div><p class="why">${esc(p.text)}</p><span class="scores">claimed by ${(p.claimed_by || []).map(chip).join(" ")}</span></li>`).join("")}</ul></div>` : "";
+  $("#gt-folded").innerHTML = (fv.length ? fv.map((g) => `<div class="fl"><h3>${verdictPill(g.v)}<span class="scores">${g.items.length} folded</span></h3><p>${g.v === "not-delivered" ? "The experiments do not show what the title claims. The problems they claimed stay open." : "Delivered, but with neither a reason nor evidence that repeats beyond one setting."}</p><ul>${g.items.map((n) => gItem(n, evid(n))).join("")}</ul></div>`).join("")
+    : `<div class="fl"><h3>Nothing folded</h3><p>Every gated work delivered its claim with a reason or robust evidence, or was read from too little text to fold.</p></div>`) + reo;
+  const un = by("unattributed");
+  if (un.length) $("#gt-folded").insertAdjacentHTML("afterbegin", `<div class="fl"><h3>${verdictPill("unattributed")}<span class="scores">${un.length} kept on the map</span></h3><p>They deliver, with a reason or repeated gains, but the text shows the gain may come from something other than the idea.</p><ul>${un.map((n) => gItem(n, (n.gates.confounders || []).length > 1 ? `<ul class="small">${n.gates.confounders.slice(1).map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : "")).join("")}</ul></div>`);
+  const ORDER = ["treasure", "solid", "unattributed", "incremental", "not-delivered"];
+  const all = gated.slice().sort((a, b) => ORDER.indexOf(a.gates.verdict) - ORDER.indexOf(b.gates.verdict) || (a.date || "").localeCompare(b.date || ""));
+  $("#gt-all-sum").textContent = `All ${all.length} gated works`;
+  const hasCk = gated.some((n) => n.gates.checks);
+  $("#gt-ck-h").hidden = !hasCk; $("#gt-table").classList.toggle("ck-on", hasCk);
+  $("#gt-all").innerHTML = all.map((n) => { const x = n.gates; return `<tr data-node="${esc(n.id)}" style="cursor:pointer"><td><div class="wtitle">${chip(n.id)}</div><div class="wsub">${esc(n.title)}</div></td><td>${verdictPill(x.verdict)}${x.fold ? `<div class="wsub">dashed on the map</div>` : ""}${unverified(n) ? `<div style="margin-top:6px">${nvBadge(n)}</div>` : ""}</td><td>${gtag(DLV[x.delivery] || ["untested", x.delivery])}</td><td>${gtag(RSN[x.reason_type] || ["untested", x.reason_type])}</td><td>${gtag(RBS[x.robustness] || ["untested", x.robustness])}</td>${hasCk ? `<td>${ckBad(x)}</td>` : ""}<td style="min-width:${hasCk ? 200 : 240}px">${esc(x.why || "")}</td></tr>`; }).join("");
+  $("#gt-method").textContent = GT.method || "";
+  $("#gt-caveats").innerHTML = (GT.caveats || []).map((c) => `<li>${esc(c)}</li>`).join("");
+  syncFolded();
+  if (folded.length) {
+    $("#map-hint").textContent += " Works that did not pass the gates are drawn dashed, in place.";
+    $("#h-facts").insertAdjacentHTML("beforeend", `<span>${folded.length} did not pass the gates</span>`);
+  }
+  if (tr.length) {
+    $("#map-hint").textContent += " A dashed ring marks a treasure candidate.";
+    const lg = $("#map .legend-shapes");
+    if (lg) lg.insertAdjacentHTML("beforeend", `<span><svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="9.5" fill="none" stroke="var(--warn)" stroke-width="2" stroke-dasharray="3 3"/><circle cx="11" cy="11" r="5.5" fill="var(--surface)" stroke="var(--ink-2)" stroke-width="2.5"/></svg>Treasure candidate</span>`);
+  }
+}
+
+/* ---------- does it hold up: gates and audit in one section ---------- */
+function renderQuality() {
+  const hasG = !!(GT && gated.length), hasA = !!(AU && assessed.length);
+  if (!hasG && !hasA) return;
+  $("#quality").hidden = false; $("#toc-quality").hidden = false;
+  const by = (v) => gated.filter((n) => n.gates.verdict === v);
+  const folded = gated.filter((n) => n.gates.fold);
+  const dis = ((G.quality || {}).disagreements || []).filter((d) => d && d.id);
+  const today = (GT && GT.today) || (AU && AU.today);
+  $("#q-facts").innerHTML = [
+    hasG ? pl(gated.length, "work gated", "works gated") : "",
+    hasG ? `${folded.length} folded` : "",
+    hasG ? pl(by("treasure").length, "treasure candidate", "treasure candidates") : "",
+    hasA ? `${assessed.filter((w) => w.assessment.flag !== "fair").length} flagged by the audit` : "",
+    dis.length ? pl(dis.length, "disagreement", "disagreements") : "",
+    tasteTxt,
+    today ? `as of ${fmtDate(today)}` : "",
+  ].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join("");
+  if (!dis.length) return;
+  $("#q-dis").hidden = false;
+  $("#q-dis").innerHTML = `<h3>Disagreements<span class="scores">${dis.length}</span></h3><p>Here the reading of the text and the blind score point different ways.</p><ul>${dis.map((d) => {
+    const w = workOf(d.id) || {};
+    const v = d.gate || (w.gates || {}).verdict, f = d.audit || (w.assessment || {}).flag;
+    return `<li><div class="row1">${chip(d.id)}${v ? verdictPill(v) : ""}${f ? flagPill(f) : ""}</div>${d.note ? `<p class="why">${esc(d.note)}</p>` : ""}</li>`;
+  }).join("")}</ul>`;
+}
+
+/* ---------- your taste versus the blind score ---------- */
+const tsSvg = $("#tsplot");
+const TS = { x: "Contribution → (blind score)", y: "Your taste →", liked: "You like it, evidence thin", likedS: "Liked, thin", read: "Read first", strong: "Strong, not your taste", strongS: "Strong, not yours", skip: "Skip", both: "works with both scores", agree: "taste and blind score agree on", pairsOf: "of pairs", rated: "papers you rated", ratedAgree: "ratings vs blind:", of: "/", pairs: "pairs agree", none: "no papers rated yet", lgWork: "A work on the map (colour: its thread)", lgRated: "A paper you rated (your rating, its blind score)", lgFit: "Your ratings fitted to the blind score", lgMed: "Medians of this map", h1: "You like it, the evidence is thin", p1: "Your profile rates these above the middle of the map, the blind score below it. Check whether your taste sees something real here, or is narrowing.", h2: "Strong, but not your taste", p2: "The blind score rates these above the middle of the map, your profile below it. These are the works you would most likely skip and should perhaps not.", noneHere: "None on this map.", taste: "taste", blind: "blind", tipRated: "A paper you rated", yourRating: "your rating" };
+const tasteWorks = nodes.filter((n) => n.gates && n.gates.attractiveness != null && n.assessment && n.assessment.contribution && n.assessment.contribution.score != null);
+const tasteOf = (n) => n.gates.attractiveness, blindOf = (n) => n.assessment.contribution.score;
+const median = (xs) => { const v = xs.slice().sort((a, b) => a - b); return v.length ? (v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2) : 0.5; };
+const rankPct = (xs) => { const s = xs.slice().sort((a, b) => a - b); return (x) => s.length > 1 ? (s.filter((v) => v < x).length + 0.5 * (s.filter((v) => v === x).length - 1)) / (s.length - 1) : 0.5; };
+const sameOrder = (pairs) => { let a = 0, t = 0; for (let i = 0; i < pairs.length; i++) for (let j = i + 1; j < pairs.length; j++) { const dy = pairs[i][1] - pairs[j][1], dx = pairs[i][0] - pairs[j][0]; if (Math.abs(dy) < 1e-9) continue; t++; a += dx * dy > 0 ? 1 : Math.abs(dx) < 1e-9 ? 0.5 : 0; } return [a, t]; };
+function tasteGap() {
+  const rT = rankPct(tasteWorks.map(tasteOf)), rB = rankPct(tasteWorks.map(blindOf));
+  return (n) => rT(tasteOf(n)) - rB(blindOf(n));
+}
+function drawTaste() {
+  if (tasteWorks.length < 3) return;
+  const CAL = (AU && AU.calibration) || {};
+  const anchors = (CAL.anchors || []).filter((r) => r.blind != null && r.yours != null);
+  const W = Math.max(300, (tsSvg.parentNode.clientWidth || 640) - 20);
+  const H = Math.round(Math.min(520, Math.max(320, W * 0.8)));
+  const m = { l: 46, r: 14, t: 14, b: 48 };
+  const X = (v) => m.l + Math.max(0, Math.min(1, v)) * (W - m.l - m.r);
+  const Y = (v) => H - m.b - Math.max(0, Math.min(1, v)) * (H - m.t - m.b);
+  tsSvg.setAttribute("viewBox", `0 0 ${W} ${H}`); tsSvg.setAttribute("width", W); tsSvg.setAttribute("height", H);
+  tsSvg.textContent = "";
+  const mx = median(tasteWorks.map(blindOf)), my = median(tasteWorks.map(tasteOf));
+  const g0 = el("g", {}, tsSvg);
+  el("rect", { x: X(0), y: Y(1), width: X(mx) - X(0), height: Y(my) - Y(1), class: "q-zone mine" }, g0);
+  el("rect", { x: X(mx), y: Y(my), width: X(1) - X(mx), height: Y(0) - Y(my), class: "q-zone miss" }, g0);
+  el("line", { x1: X(mx), x2: X(mx), y1: Y(0), y2: Y(1), class: "q-line" }, g0);
+  el("line", { x1: X(0), x2: X(1), y1: Y(my), y2: Y(my), class: "q-line" }, g0);
+  el("line", { x1: X(0), x2: X(1), y1: Y(0), y2: Y(0), class: "ax" }, g0);
+  el("line", { x1: X(0), x2: X(0), y1: Y(0), y2: Y(1), class: "ax" }, g0);
+  [0, 0.25, 0.5, 0.75, 1].forEach((v) => {
+    const tx = el("text", { x: X(v), y: Y(0) + 16, "text-anchor": v === 0 ? "start" : v === 1 ? "end" : "middle", class: "ax-t" }, g0); tx.textContent = v.toFixed(2).replace(/0$/, "").replace(/\.$/, "");
+    const ty = el("text", { x: X(0) - 6, y: Y(v) + 4, "text-anchor": "end", class: "ax-t" }, g0); ty.textContent = v.toFixed(2).replace(/0$/, "").replace(/\.$/, "");
+  });
+  el("text", { x: X(0.5), y: H - 10, "text-anchor": "middle", class: "ax-l" }, g0).textContent = TS.x;
+  el("text", { x: 14, y: Y(0.5), "text-anchor": "middle", class: "ax-l", transform: `rotate(-90 14 ${Y(0.5)})` }, g0).textContent = TS.y;
+  const narrow = W < 560;
+  const ql = (txt, x, y, anchor) => { el("text", { x, y, "text-anchor": anchor, class: "q-label" }, g0).textContent = txt; };
+  ql(narrow ? TS.likedS : TS.liked, X(0) + 8, Y(1) + 14, "start"); ql(TS.read, X(1) - 8, Y(1) + 14, "end");
+  ql(narrow ? TS.strongS : TS.strong, X(1) - 8, Y(0) - 8, "end"); ql(TS.skip, X(0) + 8, Y(0) - 8, "start");
+  if (CAL.usable && CAL.slope != null) {
+    const f = (x) => CAL.intercept + CAL.slope * x;
+    el("path", { d: `M${X(0)},${Y(f(0))} L${X(1)},${Y(f(1))}`, class: "fit" }, el("g", {}, tsSvg));
+  }
+  const gap = tasteGap();
+  const gP = el("g", {}, tsSvg);
+  const pts = tasteWorks.map((n) => ({ n, x: X(blindOf(n)), y: Y(tasteOf(n)), r: 5.5, d: Math.abs(gap(n)) }));
+  pts.forEach(({ n, x, y, r }) => {
+    const g = el("g", { class: "pt", style: `--fc:${colorOf(primary(n))}`, tabindex: 0, role: "button", "data-audit": n.id,
+      "aria-label": `${n.short}: ${TS.taste} ${score2(tasteOf(n))}, ${TS.blind} ${score2(blindOf(n))}` }, gP);
+    el("circle", { cx: x, cy: y, r }, g);
+  });
+  const gA = el("g", {}, tsSvg);
+  const ancPts = anchors.map((r) => ({ r, x: X(r.blind), y: Y(r.yours) }));
+  ancPts.forEach((p) => {
+    const { r, x, y } = p;
+    const onMap = r.on_map && byId[r.on_map];
+    const g = el("g", Object.assign({ class: `anc${onMap ? " on-map" : ""}`, "aria-label": `${r.title || r.ref}: ${TS.yourRating} ${score2(r.yours)}, ${TS.blind} ${score2(r.blind)}` }, onMap ? { "data-audit": r.on_map, tabindex: 0, role: "button" } : {}), gA);
+    el("rect", { x: x - 5, y: y - 5, width: 10, height: 10, transform: `rotate(45 ${x} ${y})` }, g);
+    p.g = g;
+  });
+  // Labels: rated papers first, then the works where taste and the blind score part most.
+  const placed = [], dots = pts.map((p) => ({ x0: p.x - 6, x1: p.x + 6, y0: p.y - 6, y1: p.y + 6 })).concat(ancPts.map((p) => ({ x0: p.x - 7, x1: p.x + 7, y0: p.y - 7, y1: p.y + 7 })));
+  const free = (b) => b.x0 >= X(0) + 2 && b.x1 <= X(1) + 2 && b.y0 >= Y(1) - 4 && b.y1 <= Y(0) - 2
+    && !placed.some((o) => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0)
+    && !dots.some((o) => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0 && !(o.x0 <= b.cx && b.cx <= o.x1 && o.y0 <= b.cy && b.cy <= o.y1));
+  const label = (txt, x, y, r, parent) => {
+    txt = txt.length > 26 ? txt.slice(0, 25) + "…" : txt;
+    const tw = txt.length * 6.3 + 2;
+    for (const c of [{ tx: x + r + 4, an: "start", x0: x + r + 3, x1: x + r + 4 + tw }, { tx: x - r - 4, an: "end", x0: x - r - 4 - tw, x1: x - r - 3 }]) {
+      const b = { x0: c.x0, x1: c.x1, y0: y - 7, y1: y + 6, cx: x, cy: y };
+      if (free(b)) { placed.push(b); const t = el("text", { x: c.tx, y: y + 4, "text-anchor": c.an }, parent); t.textContent = txt; return; }
+    }
+  };
+  ancPts.forEach(({ r, x, y, g }) => label(r.title || r.ref, x, y, 7, g));
+  pts.slice().sort((a, b) => b.d - a.d).slice(0, 12).forEach(({ n, x, y, r }) => label(n.short || n.id, x, y, r, gP.querySelector(`[data-audit="${CSS.escape(n.id)}"]`)));
+}
+function renderTaste() {
+  if (tasteWorks.length < 3) return;
+  $("#taste").hidden = false;
+  const CAL = (AU && AU.calibration) || {};
+  const anchors = (CAL.anchors || []).filter((r) => r.blind != null && r.yours != null);
+  const [a, t] = sameOrder(tasteWorks.map((n) => [tasteOf(n), blindOf(n)]));
+  $("#ts-facts").innerHTML = [
+    `${tasteWorks.length} ${TS.both}`,
+    t ? `${TS.agree} ${Math.round(100 * a / t)}% ${TS.pairsOf}` : "",
+    anchors.length ? `${anchors.length} ${TS.rated}` : TS.none,
+    anchors.length && CAL.pairs ? `${TS.ratedAgree} ${CAL.agree} ${TS.of} ${CAL.pairs} ${TS.pairs}` : "",
+  ].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join("");
+  $("#ts-legend").innerHTML = `<span><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="var(--surface)" stroke="var(--ink-2)" stroke-width="2"/></svg>${TS.lgWork}</span>`
+    + (anchors.length ? `<span><svg width="14" height="14" aria-hidden="true"><rect x="3" y="3" width="8" height="8" transform="rotate(45 7 7)" fill="var(--ink)"/></svg>${TS.lgRated}</span>` : "")
+    + (CAL.usable ? `<span><svg width="26" height="10" aria-hidden="true"><line x1="1" y1="5" x2="25" y2="5" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="7 5"/></svg>${TS.lgFit}</span>` : "")
+    + `<span><svg width="26" height="10" aria-hidden="true"><line x1="1" y1="5" x2="25" y2="5" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 4"/></svg>${TS.lgMed}</span>`;
+  const gap = tasteGap();
+  const mx = median(tasteWorks.map(blindOf)), my = median(tasteWorks.map(tasteOf));
+  const row = (n) => `<li><div class="row1">${chip(n.id)}<span class="scores">${TS.taste} ${score2(tasteOf(n))} · ${TS.blind} ${score2(blindOf(n))}</span></div>${n.gates.taste_why ? `<p class="why">${esc(n.gates.taste_why)}</p>` : ""}</li>`;
+  const mine = tasteWorks.filter((n) => tasteOf(n) >= my && blindOf(n) < mx).sort((p, q) => gap(q) - gap(p)).slice(0, 6);
+  const miss = tasteWorks.filter((n) => tasteOf(n) < my && blindOf(n) >= mx).sort((p, q) => gap(p) - gap(q)).slice(0, 6);
+  const list = (h, p, xs) => `<div class="fl"><h3>${h}<span class="scores">${xs.length}</span></h3><p>${p}</p>${xs.length ? `<ul>${xs.map(row).join("")}</ul>` : `<p class="why">${TS.noneHere}</p>`}</div>`;
+  $("#ts-lists").innerHTML = list(TS.h1, TS.p1, mine) + list(TS.h2, TS.p2, miss);
+  drawTaste();
+}
+tsSvg.addEventListener("pointerover", (ev) => {
+  if (ev.pointerType && ev.pointerType !== "mouse") return;
+  const g = ev.target.closest(".pt, .anc"); if (!g) return;
+  if (g.classList.contains("anc")) { tip.innerHTML = `<span class="tm">${TS.tipRated}</span><b>${esc(g.getAttribute("aria-label"))}</b>`; }
+  else { const n = byId[g.getAttribute("data-audit")]; tip.innerHTML = `<span class="tm">${TS.taste} ${score2(tasteOf(n))} · ${TS.blind} ${score2(blindOf(n))}</span><b>${esc(n.short)}</b>${n.gates.taste_why ? `<br>${esc(n.gates.taste_why)}` : ""}`; }
+  tip.hidden = false; moveTip(ev);
+});
+tsSvg.addEventListener("pointermove", (ev) => { if (!tip.hidden && ev.target.closest(".pt, .anc")) moveTip(ev); });
+tsSvg.addEventListener("pointerout", (ev) => { if (ev.target.closest(".pt, .anc")) tip.hidden = true; });
+
+/* ---------- what's next ---------- */
+function renderNext() {
+  const o = G.outlook || {};
+  const act = (o.active || []).filter((a) => a && (tById[a.thread] || (a.nodes || []).length));
+  const steps = (o.next_steps || []).filter((s) => s && s.text), asm = (o.assumptions || []).filter((a) => a && a.text);
+  if (!act.length && !steps.length && !asm.length) return;
+  $("#next").hidden = false; $("#toc-next").hidden = false;
+  const pById = Object.fromEntries((G.problems || []).map((p) => [p.id, p]));
+  const wchip = (id) => { const w = workOf(id); return `<span class="nx-w">${chip(id)}${w && w.date ? `<span class="scores">${esc(fmtDate(w.date))}</span>` : ""}</span>`; };
+  const pill = (pid) => { const p = pById[pid]; return `<span class="ps ${esc(p ? p.status : "")}"${p ? ` title="${esc(p.text)}"` : ""}>${esc(pid)}</span>`; };
+  $("#nx-active").innerHTML = act.length ? `<h3>Active now${o.window_months ? `<span class="scores">Last ${esc(o.window_months)} months</span>` : ""}</h3><ul>${act.map((a) =>
+    `<li><div>${tchip(a.thread)}</div><div class="row1">${(a.nodes || []).slice().sort((x, y) => ((workOf(x) || {}).date || "").localeCompare((workOf(y) || {}).date || "")).map(wchip).join("")}</div></li>`).join("")}</ul>` : "";
+  $("#nx-steps").innerHTML = steps.length ? `<h3>Open questions<span class="scores">${steps.length}</span></h3><ul>${steps.map((s) =>
+    `<li><p class="why">${s.problem ? pill(s.problem) : ""}${esc(s.text)}</p>${(s.attempts || []).length ? `<p class="nx-p"><b>Closest attempts:</b> ${s.attempts.map(chip).join(" ")}</p>` : ""}${s.settle ? `<p class="nx-p"><b>Would settle it:</b> ${esc(s.settle)}</p>` : ""}</li>`).join("")}</ul>` : "";
+  $("#nx-assume").innerHTML = asm.length ? `<h3>Shared assumptions<span class="scores">${asm.length}</span></h3><ul>${asm.map((a) =>
+    `<li><p class="why">${esc(a.text)}</p>${(a.threads || []).length || (a.nodes || []).length ? `<div class="row1">${(a.threads || []).map((t) => tchip(t)).join("")}${(a.nodes || []).map(chip).join("")}</div>` : ""}${a.if_broken ? `<p class="nx-p"><b>If it is wrong:</b> ${esc(a.if_broken)}</p>` : ""}</li>`).join("")}</ul>` : "";
+  $("#nx-note").textContent = o.note || "";
+  $("#nx-note").hidden = !o.note;
+}
+
+/* ---------- boot ---------- */
+const frame = $(".mapframe");
+const updateFades = () => {
+  const max = scroller.scrollWidth - scroller.clientWidth;
+  frame.classList.toggle("more-right", scroller.scrollLeft < max - 4);
+};
+scroller.addEventListener("scroll", updateFades, { passive: true });
+renderList();
+draw();
+renderAudit();
+renderGates();
+renderQuality();
+renderTaste();
+renderNext();
+// Start with the seed's interchange in view: most of the story happens around it.
+if (scroller.scrollWidth > scroller.clientWidth) scroller.scrollLeft = Math.max(0, L.seedX * scale - scroller.clientWidth * 0.32);
+updateFades();
+let rt = null;
+window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { draw(); updateFades(); drawAudit(); drawTaste(); }, 120); });
+})();
+</script>

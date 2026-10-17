@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Taste-Calibrated Research</title>
+<style>
+:root{
+  --bg:#f6f6f4; --surface:#ffffff; --sunk:#f1f1ee; --ink:#16181c; --ink-2:#464b54; --muted:#7a7f88;
+  --hair:#e4e4df; --hair-2:#d6d6d0; --accent:#16181c; --on-accent:#ffffff; --focus:#3b6fd8;
+  --ok:#24804a; --run:#3b6fd8; --bad:#c2413b; --idle:#9a9ea6; --seg-on:#ffffff;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --serif:"Iowan Old Style","Source Serif 4",Georgia,"Songti SC",serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --r:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#111214; --surface:#18191c; --sunk:#222428; --seg-on:#3a3d43; --ink:#ecedef; --ink-2:#c3c6cc; --muted:#8b9099;
+    --hair:#26282c; --hair-2:#33363b; --accent:#ecedef; --on-accent:#111214; --focus:#7aa2f0;
+    --ok:#52c27c; --run:#7aa2f0; --bad:#ee7a73; --idle:#7c818a; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit}
+button,input,select,textarea{font:inherit;color:inherit}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.wrap{max-width:1160px;margin-inline:auto;padding-inline:clamp(16px,4vw,40px)}
+
+/* top bar */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:22px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:650;letter-spacing:-.01em}
+.mark{width:22px;height:22px;flex:none}
+.top small{font:500 12px var(--mono);color:var(--muted)}
+
+/* page */
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:clamp(24px,4vw,48px);align-items:start;padding-block:12px 80px}
+@media (max-width:980px){.layout{grid-template-columns:minmax(0,1fr)}}
+.layout > div{min-width:0}
+.intro{display:grid;gap:8px;margin:10px 0 22px}
+h1{margin:0;font-size:clamp(28px,3.6vw,38px);line-height:1.12;font-weight:680;letter-spacing:-.022em;text-wrap:balance}
+.intro p{margin:0;font:400 17px/1.5 var(--serif);color:var(--ink-2);max-width:56ch}
+
+/* the form card */
+.card{background:var(--surface);border:1px solid var(--hair);border-radius:var(--r);box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.part{padding:20px 22px;display:grid;gap:12px;min-width:0;align-content:start}
+.part + .part{border-top:1px solid var(--hair)}
+.lab{font-size:12px;letter-spacing:.02em;color:var(--muted);display:flex;align-items:baseline;gap:8px;justify-content:space-between}
+.lab b{font-size:14px;font-weight:600;letter-spacing:0;color:var(--ink)}
+.hint{margin:0;font-size:13.5px;line-height:1.45;color:var(--muted)}
+.hint.ok{color:var(--ok)} .hint.err{color:var(--bad)}
+input[type=text],input[type=password],input[type=number],select,textarea{
+  width:100%;min-width:0;background:var(--sunk);border:1px solid transparent;border-radius:10px;padding:10px 12px;font-size:15px;line-height:1.35;color:var(--ink);transition:border-color .15s,background .15s}
+input::placeholder,textarea::placeholder{color:var(--muted)}
+input:hover,select:hover,textarea:hover{border-color:var(--hair-2)}
+input:focus,select:focus,textarea:focus{outline:none;background:var(--surface);border-color:var(--focus);box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 16%,transparent)}
+.seed{font-size:18px!important;padding:14px 16px!important;font-weight:500}
+textarea{resize:vertical;min-height:110px;font:15px/1.55 var(--serif)}
+select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 17px) 55%,calc(100% - 12px) 55%;background-size:5px 5px;background-repeat:no-repeat;padding-right:32px}
+
+.grid2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);border-top:1px solid var(--hair)}
+.grid2 > .part + .part{border-top:0;border-left:1px solid var(--hair)}
+@media (max-width:720px){.grid2{grid-template-columns:1fr}.grid2 > .part + .part{border-left:0;border-top:1px solid var(--hair)}}
+.field{display:grid;gap:6px;min-width:0}
+.field > span{font-size:12.5px;color:var(--muted)}
+.pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:10px}
+
+/* segmented controls */
+.seg{display:inline-grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--sunk);border-radius:10px;padding:3px;gap:2px;width:100%}
+.seg button{border:0;background:transparent;border-radius:8px;padding:7px 10px;font-size:14px;font-weight:550;color:var(--ink-2);cursor:pointer;white-space:nowrap}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--seg-on);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08),0 0 0 1px var(--hair)}
+
+/* papers slider */
+.num output{font:600 28px/1 var(--sans);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.num output small{font-size:13px;font-weight:500;color:var(--muted);letter-spacing:0;margin-left:6px}
+input[type=range]{width:100%;accent-color:var(--accent);margin:2px 0 0}
+
+/* taste */
+details.more{border-top:1px solid var(--hair)}
+details.more > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:16px 22px}
+details.more > summary::-webkit-details-marker{display:none}
+details.more > summary .t{font-weight:600;font-size:14px;white-space:nowrap}
+details.more > summary .t em{font-style:normal;font-weight:400;color:var(--muted)}
+details.more > summary .s{flex:1;font-size:13.5px;color:var(--muted);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+details.more > summary .chev{width:8px;height:8px;border-right:1.6px solid var(--muted);border-bottom:1.6px solid var(--muted);transform:rotate(45deg);transition:transform .15s;margin:0 4px 3px;flex:none}
+details.more[open] > summary .chev{transform:rotate(225deg);margin-bottom:-3px}
+details.more > summary:hover .t{text-decoration:underline;text-underline-offset:3px}
+details.more > .inner{padding:2px 22px 22px;display:grid;gap:18px}
+.sub{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:14px;font-weight:600}
+.sub span{font-size:12.5px;font-weight:400;color:var(--muted)}
+.papers{display:grid;gap:8px}
+.prow,.phead{display:grid;grid-template-columns:minmax(0,1.3fr) 76px minmax(0,1.4fr) 30px;gap:8px;align-items:center}
+.phead{font-size:12px;color:var(--muted)}
+.phead span:nth-child(2){text-align:center}
+.prow .score{text-align:center;font-family:var(--mono);font-size:14px}
+.x{width:30px;height:30px;border-radius:8px;border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:18px;line-height:1}
+.x:hover{background:var(--sunk);color:var(--ink)}
+@media (max-width:620px){
+  .phead{display:none}
+  .prow{grid-template-columns:minmax(0,1fr) 70px 30px;padding-bottom:10px;border-bottom:1px solid var(--hair)}
+  .prow .comment{grid-column:1/-1;grid-row:2}
+}
+.addp{justify-self:start;border:1px dashed var(--hair-2);background:transparent;border-radius:10px;padding:9px 14px;font-weight:550;color:var(--ink-2);cursor:pointer}
+.addp:hover{border-color:var(--ink-2);color:var(--ink)}
+.opt{font-style:normal;font-weight:400;color:var(--muted)}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.tool{border:0;background:none;padding:0;font-size:14px;font-weight:550;color:var(--ink-2);cursor:pointer}
+.tool:hover{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+.tool.sel{position:relative;display:inline-flex}
+.tool.sel span{pointer-events:none}
+.tool.sel select{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;padding:0}
+.paste{display:grid;gap:8px;padding:12px;border-radius:10px;background:color-mix(in srgb,var(--sunk) 60%,var(--surface))}
+.paste textarea{min-height:90px;font:13.5px/1.5 var(--mono)}
+.row-btns{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.row-btns input{flex:1 1 220px;width:auto}
+.check{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink-2);cursor:pointer}
+.check input{width:16px;height:16px;accent-color:var(--accent);margin:0}
+.samples{border-top:1px solid var(--hair)}
+
+/* footer of the form */
+.go{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 20px;padding:16px 22px;border-top:1px solid var(--hair);background:color-mix(in srgb,var(--sunk) 55%,var(--surface));border-radius:0 0 var(--r) var(--r)}
+.summary{font:500 12.5px/1.5 var(--mono);color:var(--muted);overflow-wrap:anywhere;flex:1 1 220px}
+.btn{border:0;border-radius:10px;background:var(--accent);color:var(--on-accent);padding:11px 20px;font-weight:620;font-size:15px;cursor:pointer;white-space:nowrap}
+.btn:hover{opacity:.88}
+.btn:disabled{opacity:.4;cursor:default}
+#msg{flex-basis:100%}
+
+/* reports */
+aside{position:sticky;top:18px;display:grid;gap:10px;min-width:0}
+@media (max-width:980px){aside{position:static}}
+.side-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:0 2px;margin-top:10px}
+.side-h h2{margin:0;font-size:17px;font-weight:650;letter-spacing:-.01em}
+.count{font:500 12px var(--mono);color:var(--muted)}
+.list{list-style:none;margin:0;padding:0;overflow:hidden}
+.list > li + li{border-top:1px solid var(--hair)}
+.run{padding:14px 16px;display:grid;gap:3px;min-width:0}
+.rtop{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.rtop .dot{margin-top:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--sc,var(--idle));flex:none}
+.run.running .dot{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+.rtitle{font-weight:600;font-size:15px;line-height:1.3;flex:1;min-width:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.when{padding-top:2px}
+.when{font:500 12px var(--mono);color:var(--muted);white-space:nowrap}
+.rsub,.rmeta,.stage,.acts,.track,.log{margin-left:16px}
+.rsub{font-size:13.5px;color:var(--ink-2);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.rmeta{font:500 12px/1.5 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.rmeta.err{color:var(--bad)}
+.stage{font-size:13px;color:var(--run);margin-top:2px}
+.track{height:3px;border-radius:2px;background:var(--sunk);overflow:hidden;margin-top:3px;margin-bottom:2px}
+.track i{display:block;height:100%;width:30%;border-radius:2px;background:var(--run);animation:slide 1.8s ease-in-out infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
+@media (prefers-reduced-motion:reduce){.run.running .dot,.track i{animation:none}.track i{width:100%;opacity:.35}}
+.acts{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:5px;font-size:13px}
+.acts a,.acts button{border:0;background:none;padding:0;font-weight:550;color:var(--ink-2);cursor:pointer;text-decoration:none}
+.acts a:hover,.acts button:hover{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+.acts .open,.acts .resume{color:var(--ink)}
+.log{margin-top:8px;max-height:220px;overflow:auto;background:var(--sunk);border-radius:8px;padding:8px 10px;font:400 11.5px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;color:var(--ink-2)}
+.empty{padding:18px 16px;font-size:14px;color:var(--muted)}
+.ex-h{font-size:12.5px;color:var(--muted);padding:0 2px;margin-top:10px}
+.btn.sm{padding:8px 14px;font-size:14px}
+.signin{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.signin .hint a{color:var(--ink-2)}
+.clear{border:0;background:none;padding:0 0 0 12px;font:500 12px var(--sans);color:var(--muted);cursor:pointer}
+.clear:hover{color:var(--bad);text-decoration:underline;text-underline-offset:3px}
+.acts .del{color:var(--muted)}
+.acts .del:hover,.acts .del[data-armed]{color:var(--bad)}
+.stale{box-sizing:border-box;width:calc(100% - 32px);max-width:1120px;margin:14px auto 0;padding:12px 16px;border-radius:10px;background:var(--warn-bg,#fff4e0);color:var(--warn-ink,#6b4100);font-size:14px;line-height:1.5}
+.stale code{font-size:13px;background:rgba(0,0,0,.06);padding:1px 5px;border-radius:5px}
+@media (prefers-color-scheme: dark){.stale{background:#3a2c12;color:#f3dcae}.stale code{background:rgba(255,255,255,.1)}}
+.toast.err{background:#9b2c1f;color:#fff}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--accent);color:var(--on-accent);padding:10px 16px;border-radius:10px;font-size:14px;font-weight:550;box-shadow:0 10px 30px rgba(0,0,0,.18);z-index:9}
+</style>
+</head>
+<body>
+<header class="wrap top">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 16.2 10.6 9.4M13.7 8.6l3.4 4.9" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/><circle cx="5.6" cy="18" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="6.8" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="18.6" cy="15.4" r="2.6" fill="currentColor"/></svg>
+    Taste-Calibrated Research
+  </div>
+  <small>runs on this computer</small>
+</header>
+
+<div class="stale" id="stale" hidden><b>The app running in your terminal is an older version than this page,</b> so some buttons (like Resume) won't work. Restart it: in that terminal press Ctrl+C, then run <code>python3 -m tastecal serve</code> and reload this page. If you are not sure which terminal, run <code>pkill -f "tastecal serve"</code> first. That stops only the page, not running reports.</div>
+<main class="wrap layout">
+  <div>
+    <div class="intro">
+      <h1>Trace the problems behind a paper</h1>
+      <p>Give it one paper. It maps who solved whose problem, checks which works hold up, and writes a report you can share.</p>
+    </div>
+
+    <form id="form" class="card" novalidate>
+      <div class="part">
+        <label class="lab" for="seed"><b>Paper</b><span>title, link, DOI or id</span></label>
+        <input id="seed" class="seed" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. Planning-oriented Autonomous Driving">
+        <label class="field" for="scope" style="margin-top:12px"><span>Limit to a field <em class="opt">· optional</em></span>
+          <input id="scope" type="text" autocomplete="off" placeholder="e.g. autonomous driving. Leave empty for no limit">
+        </label>
+        <p class="hint">With a limit, works from other fields (a generic diffusion model, a backbone) are listed as borrowed tools. They are not put on the map, read or audited, and do not use up the paper budget.</p>
+      </div>
+
+      <div class="grid2">
+        <div class="part">
+          <div class="lab"><b>Model</b></div>
+          <label class="field" id="planRow" hidden><span>Your subscription</span>
+            <select id="plan"><option value="">Set it myself</option></select>
+          </label>
+          <div class="seg" id="family" role="group" aria-label="Model family">
+            <button type="button" data-v="claude" aria-pressed="true">Claude</button>
+            <button type="button" data-v="gpt" aria-pressed="false">GPT</button>
+          </div>
+          <div class="seg" id="via" role="group" aria-label="How to sign in">
+            <button type="button" data-v="login" aria-pressed="true">Claude Code login</button>
+            <button type="button" data-v="key" aria-pressed="false">API key</button>
+          </div>
+          <div class="pair">
+            <label class="field"><span>Version</span>
+              <select id="modelPick"></select>
+            </label>
+            <label class="field"><span>Effort</span>
+              <select id="effort">
+                <option value="default">Model default</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high" selected>High · default</option>
+                <option value="xhigh">Extra high</option>
+                <option value="max">Max</option>
+              </select>
+            </label>
+          </div>
+          <label class="field" id="customRow" hidden><span>Model id</span>
+            <input id="model" type="text" autocomplete="off" spellcheck="false" placeholder="Type any model id your account supports">
+          </label>
+          <label class="field" id="keyRow"><span>API key</span>
+            <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a key">
+          </label>
+          <p class="hint" id="keyHint"></p>
+          <div class="signin" id="signin" hidden>
+            <button type="button" class="btn sm" id="signinBtn">Sign in with ChatGPT</button>
+            <span class="hint" id="signinMsg"></span>
+          </div>
+        </div>
+
+        <div class="part">
+          <div class="lab"><b>Max papers</b></div>
+          <div class="num"><output id="budgetOut" for="budget">30<small>papers</small></output></div>
+          <input id="budget" type="range" min="10" max="80" step="5" value="30" aria-label="Max papers">
+          <p class="hint">More papers make a fuller map and a longer run.</p>
+          <div class="lab" style="margin-top:8px"><b>Report language</b></div>
+          <div class="seg" id="lang" role="group" aria-label="Report language">
+            <button type="button" data-v="en" aria-pressed="true">English</button>
+            <button type="button" data-v="zh-CN" aria-pressed="false">中文</button>
+          </div>
+        </div>
+      </div>
+
+      <details class="more" id="more">
+        <summary><span class="t">Your taste <em>· optional</em></span><span class="s" id="moreSum">What you find worth reading</span><i class="chev" aria-hidden="true"></i></summary>
+        <div class="inner">
+          <div class="pair">
+            <label class="field"><span>Start from</span>
+              <select id="preset"><option value="">Blank</option></select>
+            </label>
+            <label class="field"><span>Save as</span>
+              <input id="tname" type="text" autocomplete="off" placeholder="A name, to reuse it later">
+            </label>
+          </div>
+          <label class="field"><span>What you find worth reading</span>
+            <textarea id="taste" rows="6" placeholder="Problems I care about…&#10;Ideas I like…&#10;Ideas I usually skip…"></textarea>
+          </label>
+        </div>
+      </details>
+
+      <div class="part samples">
+        <div class="lab"><b>Sample papers <em class="opt">· optional</em></b><span>any papers, related to the seed or not</span></div>
+        <div class="phead" id="phead" hidden><span>Title or link</span><span>Score 0–1</span><span>Why</span><span></span></div>
+        <div class="papers" id="papers"></div>
+        <div class="tools">
+          <button type="button" class="addp" id="addPaper">+ Add a paper you rated</button>
+          <button type="button" class="tool" id="pasteBtn">Paste a list</button>
+          <label class="tool sel"><span>Load template</span><select id="loadTpl" aria-label="Load a template"><option value="">Load template</option></select></label>
+          <button type="button" class="tool" id="saveBtn">Save as template</button>
+        </div>
+        <div class="paste" id="pasteBox" hidden>
+          <textarea id="pasteText" rows="4" placeholder="One paper per line:  Title or link | score 0–1 | why&#10;Deep Residual Learning | 0.9 | one simple idea everyone reuses&#10;https://arxiv.org/abs/2306.13812 | 0.6"></textarea>
+          <div class="row-btns"><button type="button" class="btn sm" id="pasteAdd">Add these</button><button type="button" class="tool" id="pasteCancel">Cancel</button></div>
+        </div>
+        <div class="paste" id="saveBox" hidden>
+          <div class="row-btns">
+            <input id="tplName" type="text" autocomplete="off" placeholder="Template name, e.g. my-driving-taste" aria-label="Template name">
+            <button type="button" class="btn sm" id="saveDo">Save</button><button type="button" class="tool" id="saveCancel">Cancel</button>
+          </div>
+          <label class="check"><input type="checkbox" id="tplDefault" checked> Fill the page with it automatically next time</label>
+          <p class="hint">Saves these papers, and the taste text above, to taste.json in this project folder. You can also edit that file by hand.</p>
+        </div>
+        <p class="hint">Papers you liked or disliked, with your own score of their contribution from 0 to 1 and a line on why. A few examples steer the reading list more than any description. They never change how the evidence is judged.</p>
+      </div>
+
+      <div class="go">
+        <p class="hint err" id="s2Hint" hidden>No Semantic Scholar key, so most paper searches will be refused and the map comes out thin.
+          The key is free: <a href="https://www.semanticscholar.org/product/api#api-key-form" target="_blank" rel="noopener">ask for one here</a>,
+          then restart this page with <code>export S2_API_KEY=...</code> set in the same terminal.</p>
+        <span class="summary" id="summary"></span>
+        <button class="btn" id="go" type="submit">Generate report</button>
+        <p class="hint" id="msg">You can close this tab while it runs. The report appears under Reports.</p>
+      </div>
+    </form>
+  </div>
+
+  <aside aria-label="Reports">
+    <div class="side-h"><h2>Reports</h2><span class="count"><span id="count"></span><button type="button" class="clear" id="clearBtn" hidden>Clear failed</button></span></div>
+    <ol class="list card" id="runs"></ol>
+    <div class="ex-h" id="exHead" hidden>Examples</div>
+    <ol class="list card" id="examples"></ol>
+  </aside>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const STATE = {running: ["Running", "var(--run)"], done: ["Ready", "var(--ok)"], failed: ["Failed", "var(--bad)"], stopped: ["Stopped", "var(--idle)"]};
+const LANG = {"en": "English", "zh-CN": "中文"};
+const PROV = {"anthropic": "Claude", "claude-cli": "Claude (Claude Code)", "openai": "GPT", "codex-cli": "GPT (ChatGPT login)"};
+const ROUTE = {claude: {key: "anthropic", login: "claude-cli"}, gpt: {key: "openai", login: "codex-cli"}};
+const LOGIN_LABEL = {claude: "Claude Code login", gpt: "ChatGPT login"};
+let S = {providers: null, profiles: [], runs: [], family: "claude", via: {claude: "login", gpt: "login"}, lang: "en", open: new Set(), timer: null};
+const LOGIN = new Set(["claude-cli", "codex-cli"]);
+
+function seg(id, onPick) {
+  const el = $(id);
+  el.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    onPick(b.dataset.v);
+  });
+}
+function setSeg(id, v) { $(id).querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === v))); }
+const provider = () => ROUTE[S.family][S.via[S.family]];
+
+function refreshModel(keepValue) {
+  const p = provider(), P = S.providers || {models: {}};
+  // [id, label] pairs; a plain id string (an older server) is shown as itself.
+  const list = ((P.models && P.models[p]) || []).map((m) => Array.isArray(m) ? m : [String(m), String(m)]);
+  if (LOGIN.has(p)) list.push(["default", "Your plan's default"]);  // let Claude Code or Codex pick
+  const keep = keepValue ? $("#model").value : "";
+  $("#modelPick").innerHTML = list.map(([v, label]) => `<option value="${esc(v)}">${esc(label)}</option>`).join("") + `<option value="__other">Other…</option>`;
+  setModel(keep || (list[0] || [""])[0]);
+  setSeg("#via", S.via[S.family]);
+  $("#via").querySelector('[data-v="login"]').textContent = LOGIN_LABEL[S.family];
+  $("#keyRow").hidden = !(p === "anthropic" || p === "openai");
+  $("#signin").hidden = !(p === "codex-cli" && P[p] && P[p].available && P[p].signed_in !== true);
+  const hint = $("#keyHint"); hint.className = "hint"; hint.textContent = "";
+  if (P[p]) {
+    if (p === "claude-cli") {
+      hint.textContent = P[p].available ? "Uses your Claude plan through Claude Code. No API key needed. At a usage limit the run waits for the reset, then goes on."
+                                        : "Claude Code was not found. Install it, run claude and type /login, then reload this page.";
+      hint.className = "hint " + (P[p].available ? "ok" : "err");
+    } else if (p === "codex-cli") {
+      if (!P[p].available) {
+        hint.textContent = "Install Codex CLI first: npm install -g @openai/codex (needs Node.js). Then reload this page.";
+        hint.className = "hint err";
+      } else if (P[p].signed_in === false) {
+        hint.textContent = "Not signed in to ChatGPT yet.";
+        hint.className = "hint err";
+      } else if (P[p].auth === "apikey") {
+        hint.textContent = "Codex is signed in with an API key, not your ChatGPT plan. Run codex logout, then sign in with ChatGPT.";
+        hint.className = "hint err";
+      } else {
+        hint.textContent = "Uses your ChatGPT plan through Codex. No API key needed. At a usage limit the run waits for the reset, then goes on.";
+        hint.className = "hint ok";
+      }
+    } else {
+      const name = p === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY";
+      hint.textContent = P[p].key ? `Using ${name} from this computer. Paste a key only to override it.` : `Paste a key, or set ${name}. A pasted key is used for this run only and never saved.`;
+      if (P[p].key) hint.className = "hint ok";
+    }
+  }
+  summarize();
+}
+// --- subscription presets ----------------------------------------------------------------
+function fillPlans() {
+  const plans = (S.providers && S.providers.plans) || [];
+  const group = (name, rows) => rows.length ? `<optgroup label="${name}">${rows.map((p) =>
+    `<option value="${esc(p.key)}">${esc(p.label)} · ${p.budget} papers</option>`).join("")}</optgroup>` : "";
+  $("#plan").innerHTML = `<option value="">Set it myself</option>` +
+    group("Claude", plans.filter((p) => p.provider === "claude-cli")) + group("ChatGPT", plans.filter((p) => p.provider === "codex-cli"));
+}
+function applyPlan(key) {
+  const p = ((S.providers && S.providers.plans) || []).find((x) => x.key === key);
+  $("#plan").value = p ? key : "";
+  try { localStorage.setItem("tastecal.plan", p ? key : ""); } catch (e) { /* storage off: fine */ }
+  if (!p) { summarize(); return; }
+  S.family = p.provider === "codex-cli" ? "gpt" : "claude";
+  S.via[S.family] = "login";
+  setSeg("#family", S.family); refreshModel(); setModel(p.model || "default");
+  $("#budget").value = p.budget; showBudget();
+}
+function setModel(v) {
+  const known = [...$("#modelPick").options].some((o) => o.value === v && v !== "__other");
+  $("#modelPick").value = known ? v : "__other";
+  $("#customRow").hidden = known;
+  $("#model").value = v;
+}
+function summarize() {
+  const m = $("#model").value.trim();
+  const eff = $("#effort").value ? `${$("#effort").selectedOptions[0].textContent.toLowerCase()} effort` : "";
+  const scope = $("#scope").value.trim();
+  $("#summary").textContent = [PROV[provider()], m, eff, `${$("#budget").value} papers`, LANG[S.lang], scope ? `limited to ${scope}` : ""].filter(Boolean).join(" · ");
+  const n = papers().length, own = $("#taste").value.trim();
+  const pre = S.profiles.find((x) => x.name === $("#preset").value);
+  $("#moreSum").textContent = pre ? pre.title : (own ? "Your own words" : "What you find worth reading");
+}
+
+// --- rated papers -----------------------------------------------------------------------
+function addPaper(p = {}) {
+  const row = document.createElement("div");
+  row.className = "prow";
+  row.innerHTML = `<input class="ref" type="text" placeholder="Title or link" aria-label="Paper" value="${esc(p.ref || "")}">
+    <input class="score" type="number" min="0" max="1" step="0.05" placeholder="0–1" aria-label="Score from 0 to 1" value="${p.score ?? ""}">
+    <input class="comment" type="text" placeholder="Why, in a line" aria-label="Why" value="${esc(p.comment || "")}">
+    <button type="button" class="x" aria-label="Remove">×</button>`;
+  row.querySelector(".x").onclick = () => { row.remove(); syncHead(); summarize(); };
+  row.addEventListener("input", summarize);
+  $("#papers").appendChild(row); syncHead();
+  return row;
+}
+function syncHead() { $("#phead").hidden = !$("#papers").children.length; }
+function papers() {
+  return [...$("#papers").children].map((r) => {
+    const s = r.querySelector(".score").value.trim();
+    return {ref: r.querySelector(".ref").value.trim(), score: s === "" ? null : Math.max(0, Math.min(1, Number(s))), comment: r.querySelector(".comment").value.trim()};
+  }).filter((p) => p.ref);
+}
+
+// --- reports ----------------------------------------------------------------------------
+function when(iso) {
+  if (!iso) return "";
+  const d = new Date(String(iso).replace(" ", "T"));
+  if (isNaN(d)) return String(iso).slice(0, 16);
+  return d.toLocaleString(undefined, {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"});
+}
+const EFF = {low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", default: "Default", "n/a": "No"};
+function modelName(id) {
+  const all = Object.values((S.providers || {}).models || {}).flat();
+  const hit = all.find((m) => Array.isArray(m) && m[0] === id);
+  return hit ? String(hit[1]).split(" · ")[0] : id;
+}
+// What actually ran: the model id the service reported (from the run log), else what was asked for.
+function modelLine(r) {
+  const used = r.model_used || "";
+  const asked = r.model || "";
+  const model = used ? modelName(used) + (modelName(used) !== used ? ` (${used})` : "")
+    : asked ? modelName(asked) + (r.state === "running" ? " (exact version not reported yet)" : "") : "Default model";
+  const eff = r.effort_used || r.effort || "default";
+  return `${model} · ${(EFF[eff] || eff)} effort`;
+}
+function runRow(r) {
+  const [label, color] = STATE[r.state] || STATE.stopped;
+  const title = r.short || r.title || r.seed || r.id;
+  const sub = r.title && r.title !== title ? r.title : (r.seed && r.seed !== title ? r.seed : "");
+  const bill = r.billed_to === "plan" ? "billed to your plan" : r.billed_to === "api key" ? "billed to an API key" : "";
+  const meta = [PROV[r.provider] || "", modelLine(r), bill, r.budget ? `${r.budget} papers` : "", LANG[r.language] || ""].filter(Boolean).join(" · ");
+  const f = r.facts || {};
+  const facts = f.works ? [`${f.works} works`, f.threads ? `${f.threads} threads` : "", f.treasures ? `${f.treasures} to read` : ""].filter(Boolean).join(" · ") : "";
+  const base = `/${r.group}/${encodeURIComponent(r.id)}`, k = `${r.group}|${r.id}`;
+  const acts = [
+    r.has_report ? `<a class="open" href="${base}/report.html" target="_blank" rel="noopener">Open report ↗</a>` : "",
+    r.group === "runs" ? `<button type="button" data-log="${esc(k)}">${S.open.has(k) ? "Hide log" : "Log"}</button>` : "",
+    r.request ? `<button type="button" data-reuse="${esc(r.id)}">Reuse settings</button>` : "",
+    r.group === "runs" && r.request && (r.state === "failed" || r.state === "stopped") && !r.has_report
+      ? `<button type="button" class="resume" data-resume="${esc(r.id)}" title="Continue from where it stopped. Work already done is reused.">Resume</button>` : "",
+    r.state === "running" ? `<button type="button" data-stop="${esc(r.id)}">Stop</button>` : "",
+    r.group === "runs" && r.state !== "running" ? `<button type="button" class="del" data-del="${esc(r.id)}">Delete</button>` : "",
+  ].filter(Boolean).join("");
+  return `<li class="run ${esc(r.state)}" style="--sc:${color}">
+    <div class="rtop"><span class="dot" title="${label}"></span><span class="rtitle" title="${esc(title)}">${esc(title)}</span><span class="when">${esc(when(r.created))}</span></div>
+    ${sub ? `<div class="rsub">${esc(sub)}</div>` : ""}
+    ${r.state === "running" ? `<div class="stage">${esc(r.stage || "Starting")}</div><div class="track"><i></i></div>` : ""}
+    ${r.state === "failed" ? `<div class="rmeta err">Failed${r.reason ? ": " + esc(r.reason) : ""}</div>` : ""}
+    ${r.state === "stopped" ? `<div class="rmeta">Stopped</div>` : ""}
+    ${meta ? `<div class="rmeta">${esc(meta)}</div>` : ""}
+    ${facts && r.state === "done" ? `<div class="rmeta">${esc(facts)}</div>` : ""}
+    ${acts ? `<div class="acts">${acts}</div>` : ""}
+    <pre class="log" data-logbox="${esc(k)}" hidden></pre>
+  </li>`;
+}
+function renderRuns() {
+  const mine = S.runs.filter((r) => r.group === "runs"), ex = S.runs.filter((r) => r.group === "examples");
+  $("#runs").innerHTML = mine.length ? mine.map(runRow).join("") : `<li class="empty">No reports yet. A new one appears here as soon as it starts.</li>`;
+  $("#examples").innerHTML = ex.map(runRow).join("");
+  $("#examples").hidden = $("#exHead").hidden = !ex.length;
+  const running = mine.filter((r) => r.state === "running").length;
+  $("#count").textContent = mine.length ? `${mine.length}${running ? ` · ${running} running` : ""}` : "";
+  const dead = mine.filter((r) => r.state === "failed" || r.state === "stopped");
+  $("#clearBtn").hidden = !dead.length;
+  if (!$("#clearBtn").dataset.armed) $("#clearBtn").textContent = dead.length > 1 ? `Clear ${dead.length} failed` : "Clear failed";
+  S.open.forEach((k) => loadLog(k));
+  clearTimeout(S.timer);
+  if (running) S.timer = setTimeout(refresh, 4000);
+}
+async function loadLog(k) {
+  const box = document.querySelector(`[data-logbox="${CSS.escape(k)}"]`); if (!box) return;
+  const [g, id] = k.split("|");
+  try {
+    const r = await (await fetch(`/api/${g}/${encodeURIComponent(id)}/log`)).json();
+    box.textContent = (r.lines || []).join("\n") || "No log yet.";
+  } catch { box.textContent = "Could not read the log."; }
+  box.hidden = false; box.scrollTop = box.scrollHeight;
+}
+async function refresh() {
+  try { S.runs = await (await fetch("/api/runs")).json(); renderRuns(); } catch { S.timer = setTimeout(refresh, 8000); }
+}
+document.addEventListener("click", async (e) => {
+  const lg = e.target.closest("[data-log]"), st = e.target.closest("[data-stop]"), ru = e.target.closest("[data-reuse]");
+  if (lg) { const k = lg.dataset.log; S.open.has(k) ? S.open.delete(k) : S.open.add(k); renderRuns(); }
+  if (st && confirmStop(st)) { await post(`/api/runs/${encodeURIComponent(st.dataset.stop)}/stop`, {}).catch((err) => toast(err.message, true)); refresh(); }
+  if (ru) reuse(S.runs.find((r) => r.id === ru.dataset.reuse));
+  const rs = e.target.closest("[data-resume]");
+  if (rs) {
+    rs.disabled = true;
+    await post(`/api/runs/${encodeURIComponent(rs.dataset.resume)}/resume`, {key: $("#key").value})
+      .then(() => toast("Resuming. Work already done is reused, so the first part is quick."))
+      .catch((err) => toast(err.message, true));
+    refresh();
+  }
+  const dl = e.target.closest("[data-del]");
+  if (dl && armed(dl, "Click again to delete", "Delete")) {
+    await post(`/api/runs/${encodeURIComponent(dl.dataset.del)}/delete`, {}).then(() => toast("Report deleted")).catch((err) => toast(err.message, true));
+    S.open.delete(`runs|${dl.dataset.del}`); refresh();
+  }
+  if (e.target.id === "clearBtn" && armed(e.target, "Click again to delete them", e.target.textContent)) {
+    const dead = S.runs.filter((r) => r.group === "runs" && (r.state === "failed" || r.state === "stopped"));
+    for (const r of dead) await post(`/api/runs/${encodeURIComponent(r.id)}/delete`, {}).catch(() => {});
+    toast(`${dead.length} deleted`); refresh();
+  }
+});
+function armed(btn, ask, label) {     // a second click within 3 s confirms; no browser dialogs
+  if (btn.dataset.armed) { delete btn.dataset.armed; return true; }
+  btn.dataset.armed = "1"; btn.textContent = ask;
+  setTimeout(() => { if (btn.isConnected && btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = label; } }, 3000);
+  return false;
+}
+function confirmStop(btn) { return armed(btn, "Click again to stop", "Stop"); }
+
+// --- ChatGPT sign-in through Codex CLI -------------------------------------------------------
+async function signIn() {
+  const msg = $("#signinMsg"); $("#signinBtn").disabled = true;
+  try {
+    await post("/api/codex/login", {});
+    msg.textContent = "A browser window opened. Finish signing in there.";
+    const t0 = Date.now();
+    while (Date.now() - t0 < 300000) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const st = await (await fetch("/api/codex/status")).json();
+      if (st.url) msg.innerHTML = `Finish signing in in your browser. If no window opened, <a href="${esc(st.url)}" target="_blank" rel="noopener">open the sign-in page</a>.`;
+      if (st.signed_in === true) {
+        S.providers["codex-cli"].signed_in = true; refreshModel(true); toast("Signed in to ChatGPT"); msg.textContent = ""; return;
+      }
+      if (!st.running && st.signed_in !== true) { msg.textContent = st.last ? `Sign-in did not finish: ${st.last}` : "Sign-in did not finish. Try again."; return; }
+    }
+    msg.textContent = "Still waiting. Try again, or run codex login in Terminal.";
+  } catch (err) { msg.textContent = err.message; }
+  finally { $("#signinBtn").disabled = false; }
+}
+$("#signinBtn").addEventListener("click", signIn);
+function reuse(r) {
+  const q = r && r.request; if (!q) return;
+  $("#seed").value = q.seed || "";
+  $("#scope").value = q.scope || "";
+  S.family = (q.provider === "openai" || q.provider === "codex-cli") ? "gpt" : "claude";
+  S.via[S.family] = (q.provider === "claude-cli" || q.provider === "codex-cli") ? "login" : "key";
+  setSeg("#family", S.family); refreshModel(); if (q.model || LOGIN.has(q.provider)) setModel(q.model || "default"); $("#effort").value = q.effort || "default";
+  $("#plan").value = q.plan || "";
+  $("#budget").value = q.budget || 30; showBudget();
+  S.lang = q.language || "en"; setSeg("#lang", S.lang);
+  $("#preset").value = ""; $("#tname").value = q.taste_name || ""; $("#taste").value = q.taste || "";
+  $("#papers").innerHTML = ""; (q.papers || []).forEach(addPaper); syncHead();
+  $("#more").open = !!q.taste;
+  summarize(); window.scrollTo({top: 0, behavior: "smooth"}); toast("Settings loaded");
+}
+
+// --- submit -----------------------------------------------------------------------------
+async function post(url, body) {
+  const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json", "X-TasteCal": "1"}, body: JSON.stringify(body)});
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 404 && data.error === "not found") {      // an older server that lacks this button's endpoint
+    $("#stale").hidden = false;
+    throw new Error("The app in your terminal is older than this page. Restart it (see the note at the top).");
+  }
+  if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
+  return data;
+}
+const PAGE_API = 6;          // must match API_VERSION in serve.py
+function toast(t, bad) {
+  const el = $("#toast"); el.textContent = t; el.hidden = false; el.classList.toggle("err", !!bad);
+  clearTimeout(el._t); el._t = setTimeout(() => (el.hidden = true), bad ? 8000 : 2800);
+}
+$("#form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = $("#msg"); msg.className = "hint";
+  if (!$("#seed").value.trim()) { msg.textContent = "Give a paper first."; msg.className = "hint err"; $("#seed").focus(); return; }
+  $("#go").disabled = true;
+  try {
+    const body = {seed: $("#seed").value, scope: $("#scope").value, provider: provider(), plan: $("#plan").value, model: $("#model").value, effort: $("#effort").value, key: $("#key").value,
+                  budget: Number($("#budget").value), language: S.lang, taste_name: $("#tname").value, taste: $("#taste").value, papers: papers()};
+    const r = await post("/api/runs", body);
+    $("#key").value = "";
+    msg.textContent = "Started. You can follow it under Reports."; msg.className = "hint ok";
+    toast("Report started"); await refresh();
+    const el = document.querySelector(`[data-logbox="runs|${CSS.escape(r.id)}"]`);
+    if (el && window.innerWidth <= 980) el.closest(".run").scrollIntoView({behavior: "smooth", block: "center"});
+  } catch (err) {
+    msg.textContent = err.message; msg.className = "hint err";
+    if (/sign in with chatgpt/i.test(err.message)) { S.providers["codex-cli"].signed_in = false; refreshModel(true); $("#signin").scrollIntoView({behavior: "smooth", block: "center"}); }
+  }
+  finally { $("#go").disabled = false; }
+});
+
+// --- start ------------------------------------------------------------------------------
+function showBudget() { $("#budgetOut").innerHTML = `${$("#budget").value}<small>papers</small>`; summarize(); }
+seg("#family", (v) => { S.family = v; refreshModel(); });
+$("#plan").addEventListener("change", () => applyPlan($("#plan").value));
+seg("#via", (v) => { S.via[S.family] = v; refreshModel(); });
+seg("#lang", (v) => { S.lang = v; summarize(); });
+$("#budget").addEventListener("input", showBudget);
+$("#model").addEventListener("input", summarize);
+["#taste", "#tname", "#scope"].forEach((s) => $(s).addEventListener("input", summarize));
+$("#addPaper").addEventListener("click", () => addPaper().querySelector(".ref").focus());
+$("#preset").addEventListener("change", () => {
+  const p = S.profiles.find((x) => x.name === $("#preset").value);
+  $("#taste").value = p ? p.text.trim() : "";
+  if (p && p.kind === "yours" && !$("#tname").value) $("#tname").value = p.name;
+  const added = p ? addPapers(p.papers || []) : 0;
+  if (p) toast(added ? `Loaded ${p.title}: taste and ${added} sample paper${added > 1 ? "s" : ""}` : `Loaded ${p.title}`);
+  summarize();
+});
+$("#modelPick").addEventListener("change", () => {
+  const v = $("#modelPick").value;
+  $("#customRow").hidden = v !== "__other";
+  $("#model").value = v === "__other" ? "" : v;
+  if (v === "__other") $("#model").focus();
+  summarize();
+});
+$("#effort").addEventListener("change", summarize);
+
+// --- sample paper templates -----------------------------------------------------------------
+function addPapers(list) {
+  [...$("#papers").children].forEach((r) => { if (!r.querySelector(".ref").value.trim()) r.remove(); });   // drop blank rows
+  const have = new Set(papers().map((p) => p.ref.toLowerCase()));
+  let n = 0;
+  for (const p of list) {
+    if (!p.ref || have.has(p.ref.toLowerCase())) continue;
+    addPaper(p); have.add(p.ref.toLowerCase()); n++;
+  }
+  syncHead(); summarize();
+  return n;
+}
+function fillTemplates() {
+  const withPapers = S.profiles.filter((p) => (p.papers || []).length);
+  $("#loadTpl").innerHTML = `<option value="">Load template</option>` + withPapers.map((p) =>
+    `<option value="${esc(p.name)}">${esc(p.title || p.name)} · ${p.papers.length} paper${p.papers.length > 1 ? "s" : ""}</option>`).join("");
+  $("#loadTpl").closest(".sel").hidden = !withPapers.length;
+}
+$("#loadTpl").addEventListener("change", () => {
+  const p = S.profiles.find((x) => x.name === $("#loadTpl").value); $("#loadTpl").value = "";
+  if (!p) return;
+  const n = addPapers(p.papers || []);
+  toast(n ? `Added ${n} paper${n > 1 ? "s" : ""} from ${p.title}` : "Those papers are already in the list");
+});
+$("#pasteBtn").addEventListener("click", () => { $("#pasteBox").hidden = false; $("#saveBox").hidden = true; $("#pasteText").focus(); });
+$("#pasteCancel").addEventListener("click", () => { $("#pasteBox").hidden = true; });
+$("#pasteAdd").addEventListener("click", () => {
+  const rows = $("#pasteText").value.split(/\n+/).map((line) => {
+    const parts = line.split(/\s*[|\t]\s*/).map((x) => x.trim());
+    if (!parts[0]) return null;
+    let score = null, why = parts.slice(1).join(" ");
+    if (parts.length > 1 && /^(0(\.\d+)?|1(\.0+)?|\.\d+)$/.test(parts[1])) { score = Number(parts[1]); why = parts.slice(2).join(" "); }
+    return {ref: parts[0].replace(/^[-*•]\s*/, ""), score, comment: why};
+  }).filter(Boolean);
+  const n = addPapers(rows);
+  $("#pasteText").value = ""; $("#pasteBox").hidden = true;
+  toast(n ? `Added ${n} paper${n > 1 ? "s" : ""}` : "Nothing new to add");
+});
+$("#saveBtn").addEventListener("click", () => { $("#saveBox").hidden = false; $("#pasteBox").hidden = true; $("#tplName").value = $("#tname").value; $("#tplName").focus(); });
+$("#saveCancel").addEventListener("click", () => { $("#saveBox").hidden = true; });
+$("#saveDo").addEventListener("click", async () => {
+  const name = $("#tplName").value.trim();
+  if (!name) { $("#tplName").focus(); return; }
+  try {
+    const r = await post("/api/profiles", {name, taste: $("#taste").value, papers: papers(), default: $("#tplDefault").checked});
+    S.profiles = r.profiles || S.profiles; fillProfiles(); fillTemplates();
+    $("#saveBox").hidden = true; toast(`Saved as template “${name}”`);
+  } catch (err) { toast(err.message); }
+});
+function fillProfiles() {
+  const cur = $("#preset").value, groups = {yours: "Your taste (taste.json)", preset: "Presets"};
+  $("#preset").innerHTML = `<option value="">Blank</option>` + ["yours", "preset"].map((k) => {
+    const items = S.profiles.filter((p) => p.kind === k); if (!items.length) return "";
+    return `<optgroup label="${groups[k]}">${items.map((p) => `<option value="${esc(p.name)}">${esc(p.title || p.name)}${p.default ? " · default" : ""}</option>`).join("")}</optgroup>`;
+  }).join("");
+  $("#preset").value = cur;
+}
+(async () => {
+  try {
+    const st = await (await fetch("/api/state")).json();
+    if (st.api !== PAGE_API) $("#stale").hidden = false;
+    S.providers = st.providers; S.profiles = st.profiles || []; S.runs = st.runs || [];
+    fillProfiles(); fillTemplates();
+    const def = S.profiles.find((p) => p.default);
+    if (def) {                                   // your default taste from taste.json fills the page
+      $("#preset").value = def.name; $("#taste").value = def.text || ""; $("#tname").value = def.title || def.name;
+      addPapers(def.papers || []);
+    }
+    // Your subscription first: Claude Code, else Codex. An API key only when neither tool is installed.
+    const P = S.providers;
+    if (!P["claude-cli"].available && P["codex-cli"].available) S.family = "gpt";
+    if (!P["claude-cli"].available && !P["codex-cli"].available) {
+      if (P.anthropic.key) S.via.claude = "key";
+      if (P.openai.key) S.via.gpt = "key";
+    }
+    setSeg("#family", S.family);
+    fillPlans(); refreshModel();
+    // The subscription shortcut is gone from the page (model, sign-in and papers are set directly below);
+    // forget a choice an older page saved, so it no longer changes the papers on load.
+    try { localStorage.removeItem("tastecal.plan"); localStorage.removeItem("deepanalyze.plan"); } catch (e) { /* storage off: fine */ }
+    $("#s2Hint").hidden = !!P.s2_key || P.s2_key === undefined;
+    renderRuns();
+  } catch { $("#msg").textContent = "Could not reach the local server. Start it with: python3 -m tastecal serve"; $("#msg").className = "hint err"; }
+})();
+</script>
+</body>
+</html>
