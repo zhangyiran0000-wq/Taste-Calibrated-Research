@@ -7,10 +7,12 @@ the report, and no code is changed.
   Seed            a title, arXiv link, DOI or Semantic Scholar id
   Model           Claude (API key or Claude Code login) or GPT (API key or ChatGPT login through Codex CLI),
                   and its version
+  Must-read       papers you want on the map with the seed (the --must of the run)
   Max papers      the --budget of the run
-  Taste           free text, plus papers you rated (title or link, a 0-1 score, a comment). Saved as the
-                  run's taste profile (runs/<id>/taste.md); with a name it is also kept in ./taste.json, and the
-                  default profile there fills the page in automatically next time
+  Taste           papers you rated (title or link, a 0-1 score, a comment): the run's taste profile
+                  (runs/<id>/taste.md), which the taste calibration after the map fits to. They are saved to
+                  ./taste.json only with "Save this taste" (a taste of the same name is replaced only after you
+                  confirm), read back with "Load a saved taste", or imported from a ratings file
   Reports         every run with its status, its log, and a link to open the report
 
 The server listens on 127.0.0.1 only. API keys typed into the page are passed to the run's process
@@ -45,8 +47,9 @@ MODELS = {   # suggestions only (value, label); any model id the account support
     "codex-cli": [["gpt-6-astra", "GPT-6 Astra · most capable"], ["gpt-6.1-sol", "GPT-6.1 Sol"], ["gpt-6-luna", "GPT-6 Luna · fastest"]],
 }
 EFFORTS = ("low", "medium", "high", "xhigh", "max", "default")
-API_VERSION = 6          # bump when the page needs a new endpoint; the page warns when the server is older
+API_VERSION = 10         # bump when the page needs a new endpoint; the page warns when the server is older
 GROUPS = ("runs", "examples")
+MAX_MUST = 10            # must-read papers a run takes, besides the seed
 
 
 def slug(text: str, n: int = 40) -> str:
@@ -90,9 +93,19 @@ def clean_request(body: dict) -> dict:
     model = str(body.get("model") or "").strip()[:80] or DEFAULT_MODEL.get(provider, "")
     plan = body.get("plan") if body.get("plan") in PLANS else ""
     scope = " ".join(str(body.get("scope") or "").split())[:200]
-    return {"seed": seed[:500], "scope": scope, "provider": provider, "plan": plan, "model": model, "effort": effort,
+    must = []
+    for m in body.get("must") or []:
+        m = " ".join(str(m or "").split())[:500]
+        if m and m.lower() not in {x.lower() for x in must}:
+            must.append(m)
+    if len(must) > MAX_MUST:
+        raise ValueError(f"At most {MAX_MUST} must-read papers.")
+    # the page always asks for the taste calibration after the map; the run does it with 3 or more rated papers
+    return {"seed": seed[:500], "scope": scope, "must": must, "fit": True, "provider": provider, "plan": plan, "model": model, "effort": effort,
             "budget": budget, "language": lang, "taste_name": str(body.get("taste_name") or "").strip()[:60],
-            "taste": str(body.get("taste") or "").strip()[:8000], "papers": papers[:40]}
+            # the taste.json profile it was loaded from or saved as: your ratings in a report go back to it
+            "taste_key": re.sub(r"[^a-z0-9\u4e00-\u9fff-]+", "", str(body.get("taste_key") or "").lower())[:40],
+            "papers": papers[:40]}
 
 
 class Runner:
@@ -118,6 +131,10 @@ class Runner:
             cmd += ["--effort", req["effort"]]
         if req.get("scope"):
             cmd += ["--scope", req["scope"]]
+        for m in req.get("must") or []:
+            cmd += ["--must", m]
+        if req.get("fit"):
+            cmd += ["--fit"]
         return cmd
 
     def new_id(self, seed: str) -> str:
@@ -133,10 +150,8 @@ class Runner:
         os.makedirs(out)
         taste_path = os.path.join(out, "taste.md")
         with open(taste_path, "w", encoding="utf-8") as f:
-            f.write(build_profile(req["taste_name"], req["taste"], req["papers"]))
-        if req["taste_name"]:
-            from tastecal.taste.profiles import put_profile
-            put_profile(req["taste_name"], req["taste"], req["papers"], self.base)
+            f.write(build_profile(req["taste_name"], req["papers"]))
+        # taste.json changes only with "Save this taste" on the page, never as a side effect of a run
         _write_json(os.path.join(out, "request.json"), dict(req, created=dt.datetime.now().isoformat(timespec="seconds")))
         env = dict(os.environ, TASTECAL_SERVED="1", PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
         env.pop("TASTECAL_PLAN", None)        # the page sends its own settings; a shell default must not change them
@@ -188,10 +203,11 @@ class Runner:
         return True
 
     def taste_name(self, group: str, rid: str) -> str:
-        """The taste profile a report was made with (its request.json), or "" when unknown."""
+        """The taste profile a report was made with (its request.json): its taste.json key when known, else its name;
+        "" when unknown."""
         folder = self.folder(group, rid) if rid else None
         req = _read_json(os.path.join(folder, "request.json")) if folder else None
-        return str((req or {}).get("taste_name") or "")
+        return str((req or {}).get("taste_key") or (req or {}).get("taste_name") or "")
 
     @staticmethod
     def default_resume_command(out: str) -> List[str]:
@@ -289,8 +305,7 @@ class Runner:
             row["title"] = seed.get("title") or ""
             row["short"] = seed.get("short") or ""
             row["language"] = row["language"] or meta.get("language") or "en"
-            row["facts"] = {"works": len(g.get("nodes") or []), "threads": len(g.get("threads") or []),
-                            "folded": (g.get("gates") or {}).get("folded"), "treasures": ((g.get("gates") or {}).get("counts") or {}).get("treasure")}
+            row["facts"] = {"works": len(g.get("nodes") or []), "threads": len(g.get("threads") or [])}
             if not row["seed"]:
                 row["seed"] = meta.get("seed_ref") or ""
             if not row["model"] and len(str(meta.get("model") or "")) <= 32:
@@ -305,8 +320,8 @@ class Runner:
         row["model_used"], row["effort_used"] = model_in_use(path, g if isinstance(g, dict) else None)
         row["billed_to"] = billed_to(path)
         if req:
-            row["request"] = {k: req.get(k) for k in ("seed", "scope", "provider", "plan", "model", "effort", "budget", "language",
-                                                      "taste_name", "taste", "papers")}
+            row["request"] = {k: req.get(k) for k in ("seed", "scope", "must", "provider", "plan", "model", "effort", "budget",
+                                                      "language", "taste_name", "taste_key", "papers")}
             row["effort"] = req.get("effort") or ""
         return row
 
@@ -436,6 +451,8 @@ def stage(lines: List[str]) -> str:
         day = "" if m.group(1) == dt.date.today().isoformat() else m.group(1)[5:] + " "
         return f"Waiting for your plan's usage limit to reset · until {day}{m.group(2)}"
     text = "\n".join(lines)
+    if re.search(r"tastecal\.(fit|attention):|taste calibration: fitting", text):
+        return "Calibrating your taste"
     if "plain language" in text:
         return "Polishing the text"
     if re.search(r"adversarial review|audit:", text):
@@ -543,7 +560,8 @@ class CodexLogin:
 
 
 def providers_state() -> dict:
-    from tastecal.core.config import PLANS
+    from tastecal.core.config import PLANS, clean_secret, env_value
+    has = lambda name: bool(clean_secret(env_value(name)))  # noqa: E731  (saved with setx counts on Windows)
     from tastecal.core.llm import codex_auth
     claude = os.environ.get("CLAUDE_BIN") or shutil.which("claude")
     codex = codex_bin()
@@ -551,9 +569,11 @@ def providers_state() -> dict:
     signed = (mode in ("chatgpt", "apikey")) if mode else (codex_signed_in() if codex else False)
     return {"codex-cli": {"available": bool(codex), "signed_in": signed, "auth": mode},
             "plans": [{"key": k, **v} for k, v in PLANS.items()],
-            "s2_key": bool(os.environ.get("S2_API_KEY")),
-            "anthropic": {"key": bool(os.environ.get("ANTHROPIC_API_KEY"))},
-            "openai": {"key": bool(os.environ.get("OPENAI_API_KEY")), "base_url": os.environ.get("OPENAI_BASE_URL", "")},
+            "s2_key": has("S2_API_KEY"),
+            "openalex_key": has("OPENALEX_API_KEY"),
+            "windows": os.name == "nt",          # which command the page shows for setting a key
+            "anthropic": {"key": has("ANTHROPIC_API_KEY")},
+            "openai": {"key": has("OPENAI_API_KEY"), "base_url": os.environ.get("OPENAI_BASE_URL", "")},
             "claude-cli": {"available": bool(claude)},
             "models": MODELS}
 
@@ -562,39 +582,31 @@ PAPER_HEADS = {"## papers i liked": 0.8, "## papers i disliked": 0.2, "## papers
 PAPER_LINE = re.compile(r"^-\s+(?P<ref>.+?)(?:\s+\(my score (?P<score>[0-9.]+)\))?(?::\s+(?P<why>.*))?$")
 
 
-def split_profile(body: str):
-    """(taste text, sample papers) from a profile body. Papers come from its "Papers I liked/disliked/noted"
-    sections; patterns written in brackets ("(a pattern, not a paper) ...") stay in the text."""
-    keep, papers, section = [], [], None
+def profile_papers(body: str) -> List[dict]:
+    """The sample papers of a Markdown profile: its "Papers I liked/disliked/noted" lines (a line without "(my score
+    ...)" gets its section's score). Pattern lines in brackets and any other text are left out."""
+    papers, section = [], None
     for line in body.splitlines():
         low = line.strip().lower()
         if low.startswith("## "):
             section = low if low in PAPER_HEADS else None
-            if section is None:
-                keep.append(line)
             continue
-        if low.startswith("scores are my own rating"):
-            continue
-        if section is not None:
-            m = PAPER_LINE.match(line.strip())
-            if m and not m.group("ref").startswith("("):
-                score = float(m.group("score")) if m.group("score") else PAPER_HEADS[section]
-                papers.append({"ref": m.group("ref").strip(), "score": score, "comment": (m.group("why") or "").strip()})
-            elif line.strip():
-                keep.append(line)                     # a pattern line or prose: keep it as taste text
-            continue
-        keep.append(line)
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(keep)).strip(), papers
+        m = PAPER_LINE.match(line.strip()) if section is not None else None
+        if m and not m.group("ref").startswith("("):
+            score = float(m.group("score")) if m.group("score") else PAPER_HEADS[section]
+            papers.append({"ref": m.group("ref").strip(), "score": score, "comment": (m.group("why") or "").strip()})
+    return papers
 
 
 def profiles_state(base: str = ".") -> List[dict]:
-    """Your profiles from taste.json first (and any older profiles/*.md), then the presets."""
+    """Your profiles from taste.json (and any older profiles/*.md)."""
     from tastecal.taste.profiles import list_profiles, load_profile, load_store
     store = load_store(base)
-    out = [{"name": k, "title": v.get("title") or k, "kind": "yours", "text": v.get("taste") or "",
+    out = [{"name": k, "title": v.get("title") or k, "kind": "yours",
             "papers": [p for p in v.get("papers") or [] if isinstance(p, dict) and p.get("ref")],
-            "default": k == store.get("default")}
+            "saved": str(v.get("saved") or ""), "default": k == store.get("default")}
            for k, v in store.get("profiles", {}).items() if isinstance(v, dict)]
+    out.sort(key=lambda p: p["saved"], reverse=True)          # the latest saved first (older ones have no date)
     seen = {p["name"] for p in out}
     for name, path, kind in list_profiles(os.path.join(base, "profiles")):
         if name in seen:
@@ -603,10 +615,69 @@ def profiles_state(base: str = ".") -> List[dict]:
             title, text, _ = load_profile(path)
         except OSError:
             continue
-        body = re.sub(r"^#\s+.*\n+", "", text, count=1)
-        taste, papers = split_profile(body)
-        out.append({"name": name, "title": title, "kind": kind, "text": taste, "papers": papers, "default": False})
+        out.append({"name": name, "title": title, "kind": kind, "papers": profile_papers(text), "default": False})
     return out
+
+
+RATING_FILE = re.compile(r"^ratings[^/\\]*\.(json|ya?ml|csv|xlsx|txt)$", re.I)
+
+
+def rating_files(base: str = ".") -> List[dict]:
+    """Your ratings files in the project folder (ratings*.json and the like, as `fit --rated` takes them), each with
+    how many rated papers it holds, so the page can load one directly."""
+    from tastecal.taste.axes import read_table
+    out = []
+    try:
+        names = sorted(n for n in os.listdir(base) if RATING_FILE.match(n) and os.path.isfile(os.path.join(base, n)))
+    except OSError:
+        return out
+    for n in names:
+        try:
+            rows = read_table(os.path.join(base, n))
+        except (SystemExit, Exception):           # unreadable, or YAML without PyYAML: not offered
+            continue
+        if rows:
+            out.append({"file": n, "papers": len(rows), "saved": _mtime(os.path.join(base, n))})
+    return out
+
+
+def read_rating_file(base: str, name: str) -> List[dict]:
+    """The rated papers of one of rating_files(), by its file name only. Raises ValueError for the page."""
+    from tastecal.taste.axes import read_table
+    if name not in {f["file"] for f in rating_files(base)}:
+        raise ValueError("No such ratings file in this folder.")
+    return clean_request({"seed": "x", "provider": "anthropic", "papers": read_table(os.path.join(base, name))})["papers"]
+
+
+IMPORT_TYPES = (".json", ".yaml", ".yml", ".csv", ".xlsx", ".txt", ".md")
+IMPORT_MAX = 2 * 1024 * 1024
+
+
+def import_ratings(name: str, data_b64: str) -> List[dict]:
+    """Rated papers from a file the page sends (a ratings.json, a spreadsheet, a text list), read as `fit --rated`
+    reads it. Raises ValueError with a message for the page."""
+    import base64
+    import tempfile
+    from tastecal.taste.axes import read_table
+    ext = os.path.splitext(str(name or "").lower())[1]
+    if ext not in IMPORT_TYPES:
+        raise ValueError("Give a .json, .yaml, .csv, .xlsx or .txt file of rated papers.")
+    try:
+        raw = base64.b64decode(str(data_b64 or "").split(",", 1)[-1], validate=False)
+    except ValueError:
+        raise ValueError("Could not read that file.")
+    if not raw or len(raw) > IMPORT_MAX:
+        raise ValueError("That file is empty or too large.")
+    fd, path = tempfile.mkstemp(suffix=ext)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(raw)
+        rows = read_table(path)
+    except (SystemExit, Exception) as e:      # a broken file, or YAML without PyYAML
+        raise ValueError(f"Could not read rated papers from {name}: {e}")
+    finally:
+        os.remove(path)
+    return clean_request({"seed": "x", "provider": "anthropic", "papers": rows})["papers"]
 
 
 # ----------------------------------------------------------------------------- HTTP
@@ -643,7 +714,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, self.page, "text/html; charset=utf-8")
         if path == "/api/state":
             return self._json({"api": API_VERSION, "providers": providers_state(),
-                               "profiles": profiles_state(self.runner.base), "runs": self.runner.list()})
+                               "profiles": profiles_state(self.runner.base),
+                               "files": rating_files(self.runner.base),
+                               "runs": self.runner.list()})
         if path == "/api/runs":
             return self._json(self.runner.list())
         if path == "/api/codex/status":
@@ -725,12 +798,30 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/profiles":
             name = " ".join(str(body.get("name") or "").split())[:60]
             if not name:
-                return self._json({"error": "Give the template a name."}, 400)
-            from tastecal.taste.profiles import put_profile
+                return self._json({"error": "Give the taste a name."}, 400)
+            from tastecal.taste.profiles import find_key, load_store, put_profile
+            store = load_store(self.runner.base)
+            # the taste loaded on the page (its key, while its name is unchanged), else the one of that name or title
+            key = str(body.get("key") or "")
+            key = key if key in store.get("profiles", {}) else find_key(name, store)
+            had = store.get("profiles", {}).get(key) if key else None
+            if had and not body.get("overwrite"):
+                # one taste per name: the page asks before replacing it
+                return self._json({"exists": True, "title": (had or {}).get("title") or name,
+                                   "saved": (had or {}).get("saved") or ""}, 409)
             req = clean_request({"seed": "x", "provider": "anthropic", "papers": body.get("papers") or []})
-            key = put_profile(name, str(body.get("taste") or "")[:8000], req["papers"], self.runner.base,
-                              make_default=bool(body.get("default")))
+            key = put_profile(name, req["papers"], self.runner.base, key=key)
             return self._json({"saved": key, "profiles": profiles_state(self.runner.base)})
+        if path == "/api/ratings/file":
+            try:
+                return self._json({"papers": read_rating_file(self.runner.base, str(body.get("file") or ""))})
+            except ValueError as e:
+                return self._json({"error": str(e)}, 404)
+        if path == "/api/ratings/import":
+            try:
+                return self._json({"papers": import_ratings(body.get("name"), body.get("data"))})
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
         if path == "/api/taste/rate":
             from tastecal.taste.profiles import rate_paper
             ref = " ".join(str(body.get("ref") or "").split())[:400]

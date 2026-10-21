@@ -56,17 +56,24 @@ class ServeTest(unittest.TestCase):
             return e.code, json.loads(e.read() or b"{}")
 
     def test_page_and_state(self):
-        self.assertIn("Trace the problems behind a paper", self.get("/"))
+        page = self.get("/")
+        self.assertIn("Trace the problems behind a paper", page)
+        for s in ("Must-read papers", "Load a saved taste", "Save this taste", "Attention Is All He Needs",
+                  "一个小领域里的应用，看起来还算成功。", "An application in a narrow area"):
+            self.assertIn(s, page)                                       # examples in both report languages
+        self.assertNotIn("p.default)", page)                             # nothing fills the page by itself
         st = json.loads(self.get("/api/state"))
         self.assertIn("models", st["providers"])
-        self.assertTrue(any(p["name"] == "practitioner" for p in st["profiles"]))
+        self.assertEqual(st["profiles"], [])                              # no tastes shipped with the tool
+        self.assertNotIn("words", st)                                     # no taste in words: only rated papers
+        self.assertNotIn("Describe it in words", page)
         self.assertEqual([r["id"] for r in st["runs"]], ["demo"])
         self.assertIn("demo", self.get("/examples/demo/report.html"))
 
     def test_run_writes_taste_and_lists_the_report(self):
         code, res = self.post("/api/runs", {"seed": "Attention Is All You Need", "provider": "openai", "key": "sk-test",
                                             "budget": 20, "language": "zh-CN", "taste_name": "Mine Test",
-                                            "taste": "I like simple ideas.",
+                                            "taste": "I like simple ideas.",       # an older page's words: dropped
                                             "papers": [{"ref": "ResNet", "score": 0.9, "comment": "simple and general"},
                                                        {"ref": "Some paper", "score": 0.1, "comment": "decoration"},
                                                        {"ref": "", "score": 0.5}]})
@@ -80,24 +87,20 @@ class ServeTest(unittest.TestCase):
             time.sleep(0.1)
         self.assertEqual(row["state"], "done")
         self.assertEqual(row["title"], "Seed Title")
-        self.assertEqual(row["facts"]["treasures"], 2)
+        self.assertEqual(row["facts"], {"works": 1, "threads": 0})            # no "to read" count: the notes are not shown
         self.assertEqual(runs[0]["id"], rid)                       # newest run first, examples last
         folder = os.path.join(self.base, "runs", rid)
         name, text, _ = load_profile(os.path.join(folder, "taste.md"))
         self.assertEqual(name, "Mine Test")
         self.assertIn("## Papers I liked\n- ResNet (my score 0.90): simple and general", text)
         self.assertIn("## Papers I disliked", text)
-        with open(os.path.join(self.base, "taste.json")) as f:
-            store = json.load(f)
-        self.assertEqual(store["default"], "mine-test")
-        self.assertEqual(store["profiles"]["mine-test"]["taste"], "I like simple ideas.")
-        self.assertEqual(store["profiles"]["mine-test"]["papers"][0], {"ref": "ResNet", "score": 0.9, "comment": "simple and general"})
-        st = json.loads(self.get("/api/state"))
-        mine = next(p for p in st["profiles"] if p["name"] == "mine-test")
-        self.assertTrue(mine["default"])
+        self.assertNotIn("I like simple ideas.", text)
+        # a run never changes taste.json: only "Save this taste" does
+        self.assertFalse(os.path.exists(os.path.join(self.base, "taste.json")))
         with open(os.path.join(folder, "request.json")) as f:
             req = json.load(f)
         self.assertNotIn("key", req)                               # keys are never written
+        self.assertNotIn("taste", req)
         self.assertIn("report", self.get(f"/runs/{rid}/report.html"))
         self.assertIn("round 1", " ".join(json.loads(self.get(f"/api/runs/{rid}/log"))["lines"]))
 
@@ -155,16 +158,23 @@ if sys.argv[1:] == ["login"]:
             os.environ.pop("CODEX_BIN", None)
 
     def test_templates_and_effort(self):
-        code, res = self.post("/api/profiles", {"name": "My Driving", "taste": "Plain ideas.",
+        code, res = self.post("/api/profiles", {"name": "My Driving",
                                                 "papers": [{"ref": "ResNet", "score": 0.9, "comment": "simple"},
                                                            {"ref": "Hype paper", "score": 0.1, "comment": "decoration"}]})
         self.assertEqual(code, 200, res)
         mine = next(p for p in res["profiles"] if p["name"] == "my-driving")
-        self.assertEqual(mine["text"], "Plain ideas.")
-        self.assertEqual([(p["ref"], p["score"]) for p in mine["papers"]], [("ResNet", 0.9), ("Hype paper", 0.1)])
-        prac = next(p for p in res["profiles"] if p["name"] == "practitioner")
-        self.assertTrue(prac["papers"] and all(p["score"] == 0.8 for p in prac["papers"]))
-        self.assertNotIn("## Papers I liked", prac["text"])
+        self.assertTrue(mine["saved"])                                   # when it was saved, for the list
+        self.assertNotIn("text", mine)
+        # one taste per name: the same name again is replaced only when the page confirms it
+        code, again = self.post("/api/profiles", {"name": "my driving", "papers": []})
+        self.assertEqual((code, again["exists"], again["title"]), (409, True, "My Driving"))
+        self.assertEqual(len(json.load(open(os.path.join(self.base, "taste.json")))["profiles"]["my-driving"]["papers"]), 2)
+        code, res = self.post("/api/profiles", {"name": "My Driving", "overwrite": True, "taste": "Old page words.",
+                                                "papers": [{"ref": "ResNet", "score": 0.8}]})
+        mine = next(p for p in res["profiles"] if p["name"] == "my-driving")
+        self.assertEqual([(p["ref"], p["score"]) for p in mine["papers"]], [("ResNet", 0.8)])
+        self.assertEqual(sorted(json.load(open(os.path.join(self.base, "taste.json")))["profiles"]["my-driving"]),
+                         ["papers", "saved", "title"])                    # no words, no principles
         code, res = self.post("/api/runs", {"seed": "x", "provider": "openai", "key": "k", "budget": 10, "effort": "xhigh"})
         req = json.load(open(os.path.join(self.base, "runs", res["id"], "request.json")))
         self.assertEqual(req["effort"], "xhigh")
@@ -172,12 +182,112 @@ if sys.argv[1:] == ["login"]:
         cmd = Runner.default_command(dict(req, model="claude-opus-5-5"), "out", "taste.md")
         self.assertEqual(cmd[cmd.index("--effort") + 1], "xhigh")
         self.assertEqual(cmd[cmd.index("--model") + 1], "claude-opus-5-5")
+        self.assertNotIn("--must", cmd)
+
+    def test_import_a_ratings_file(self):
+        import base64
+        rows = [{"paper": "Attention is all you need", "score": 0.9, "reason": "founding work"},
+                {"paper": "Some benchmark", "score": "0.3", "reason": "narrow"}]
+        b64 = lambda raw: "data:application/json;base64," + base64.b64encode(raw).decode()  # noqa: E731
+        code, res = self.post("/api/ratings/import", {"name": "ratings.json", "data": b64(json.dumps(rows).encode())})
+        self.assertEqual(code, 200, res)
+        self.assertEqual(res["papers"], [{"ref": "Attention is all you need", "score": 0.9, "comment": "founding work"},
+                                         {"ref": "Some benchmark", "score": 0.3, "comment": "narrow"}])
+        code, res = self.post("/api/ratings/import", {"name": "list.txt", "data": b64("ResNet | 0.8 | simple".encode())})
+        self.assertEqual((code, res["papers"][0]["ref"], res["papers"][0]["score"]), (200, "ResNet", 0.8))
+        self.assertEqual(self.post("/api/ratings/import", {"name": "x.exe", "data": b64(b"x")})[0], 400)
+        self.assertEqual(self.post("/api/ratings/import", {"name": "bad.json", "data": b64(b"{nope")})[0], 400)
+
+    def test_a_loaded_taste_is_saved_back_under_its_own_key(self):
+        with open(os.path.join(self.base, "taste.json"), "w", encoding="utf-8") as f:
+            json.dump({"default": "mine", "profiles": {"mine": {"title": "Mine (draft)", "taste": "My words.", "papers": [],
+                       "principles": [{"id": "P1", "sign": "+", "text": "opens a new field", "from": []}]}}}, f)
+        # by its title, the same taste is found (not a new "mine-draft"), and replaced only when confirmed
+        code, res = self.post("/api/profiles", {"name": "Mine (draft)", "papers": [{"ref": "ResNet", "score": 0.9}]})
+        self.assertEqual((code, res["exists"]), (409, True))
+        code, res = self.post("/api/profiles", {"name": "Mine (draft)", "key": "mine", "overwrite": True,
+                                                "papers": [{"ref": "ResNet", "score": 0.9}]})
+        self.assertEqual((code, res["saved"]), (200, "mine"))
+        store = json.load(open(os.path.join(self.base, "taste.json")))
+        self.assertEqual(sorted(store["profiles"]), ["mine"])
+        self.assertNotIn("principles", store["profiles"]["mine"])        # older words and principles are dropped
+        self.assertNotIn("taste", store["profiles"]["mine"])
+        # a run made with it gets its rated papers, and the report's ratings go back to it
+        code, res = self.post("/api/runs", {"seed": "x", "provider": "openai", "key": "k", "budget": 10,
+                                            "taste_name": "Mine (draft)", "taste_key": "mine",
+                                            "papers": [{"ref": "ResNet", "score": 0.9}]})
+        self.assertEqual(code, 200, res)
+        with open(os.path.join(self.base, "runs", res["id"], "taste.md"), encoding="utf-8") as f:
+            md = f.read()
+        self.assertIn("- ResNet (my score 0.90)", md)
+        self.assertNotIn("opens a new field", md)
+        self.assertEqual(self.srv.RequestHandlerClass.runner.taste_name("runs", res["id"]), "mine")
+
+    def test_ratings_files_in_the_folder_load_directly(self):
+        rows = [{"paper": f"Paper {i}", "score": i / 10, "reason": "r"} for i in range(1, 12)]
+        with open(os.path.join(self.base, "ratings.json"), "w", encoding="utf-8") as f:
+            json.dump(rows, f)
+        with open(os.path.join(self.base, "notes.json"), "w", encoding="utf-8") as f:
+            json.dump(rows, f)                                         # not a ratings file: not offered
+        files = json.loads(self.get("/api/state"))["files"]
+        self.assertEqual([(f["file"], f["papers"]) for f in files], [("ratings.json", 11)])
+        code, res = self.post("/api/ratings/file", {"file": "ratings.json"})
+        self.assertEqual((code, len(res["papers"]), res["papers"][0]), (200, 11, {"ref": "Paper 1", "score": 0.1, "comment": "r"}))
+        for bad in ("notes.json", "../ratings.json", "/etc/passwd"):
+            self.assertEqual(self.post("/api/ratings/file", {"file": bad})[0], 404, bad)
+
+    def test_the_taste_calibration_follows_a_page_run(self):
+        from tastecal import cli
+        from tastecal.app.serve import Runner
+        req = clean_request({"seed": "x", "provider": "anthropic"})
+        self.assertTrue(req["fit"])
+        self.assertIn("--fit", Runner.default_command(dict(req, model=""), "out", "taste.md"))
+        three = build_profile("Mine", [{"ref": f"P{i}", "score": 0.5, "comment": ""} for i in range(3)])
+        two = build_profile("Mine", [{"ref": "P1", "score": 0.5, "comment": ""}, {"ref": "P2", "score": None, "comment": ""},
+                                         {"ref": "P3", "score": 0.4, "comment": ""}])
+        self.assertEqual(cli.taste_fit_argv("g.json", "taste.md", three), (["fit", "g.json", "--taste", "taste.md"], 3))
+        self.assertEqual(cli.taste_fit_argv("g.json", "taste.md", two), (None, 2))     # a paper without a score
+        self.assertEqual(cli.taste_fit_argv("g.json", "", three)[0], None)
+        self.assertEqual(stage(["08:00 tastecal: plain language: 3 texts", "08:01 tastecal: taste calibration: fitting your taste"]),
+                         "Calibrating your taste")
+        self.assertEqual(stage(["08:00 tastecal.fit: round 3"]), "Calibrating your taste")    # long after the first line
+        # a calibration that fails leaves the lineage report and says how to run it again
+        import logging
+        from unittest import mock
+        calls = []
+        with mock.patch.object(cli, "main", lambda argv: calls.append(argv) or 1), \
+                self.assertLogs("tastecal", "WARNING") as cm:
+            self.assertEqual(cli.taste_fit_after("g.json", "taste.md", three, logging.getLogger("tastecal")), 1)
+        self.assertEqual(calls, [["fit", "g.json", "--taste", "taste.md"]])
+        self.assertIn("Run it again with: python -m tastecal fit g.json --taste taste.md", "\n".join(cm.output))
+        # Resume asks for it again
+        folder = os.path.join(self.base, "runs", "r1")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "request.json"), "w") as f:
+            json.dump(dict(req, budget=10), f)
+        seen = []
+        with mock.patch.object(cli, "main", lambda argv: seen.append(argv) or 0), mock.patch.dict(os.environ, {"TASTECAL_SERVED": "1"}):
+            cli.cmd_resume(type("A", (), {"folder": folder})())
+        self.assertIn("--fit", seen[0])
+
+    def test_must_read_papers(self):
+        req = clean_request({"seed": "x", "provider": "anthropic",
+                             "must": ["  Attention Is All You Need ", "attention is all you need", "", "arXiv:1512.03385"]})
+        self.assertEqual(req["must"], ["Attention Is All You Need", "arXiv:1512.03385"])     # trimmed, once each
+        from tastecal.app.serve import MAX_MUST, Runner
+        cmd = Runner.default_command(dict(req, model=""), "out", "taste.md")
+        self.assertEqual([cmd[i + 1] for i, a in enumerate(cmd) if a == "--must"], req["must"])
+        with self.assertRaises(ValueError):
+            clean_request({"seed": "x", "provider": "anthropic", "must": [f"paper {i}" for i in range(MAX_MUST + 1)]})
+        code, res = self.post("/api/runs", {"seed": "x", "provider": "openai", "key": "k", "budget": 10, "must": ["A paper"]})
+        self.assertEqual(code, 200, res)
+        self.assertEqual(json.load(open(os.path.join(self.base, "runs", res["id"], "request.json")))["must"], ["A paper"])
 
     def test_helpers(self):
         self.assertEqual(clean_request({"seed": " a  b ", "provider": "anthropic", "budget": "40"})["seed"], "a b")
         with self.assertRaises(ValueError):
             clean_request({"seed": "a", "provider": "anthropic", "budget": 500})
-        self.assertIn("Papers I noted", build_profile("", "", [{"ref": "X", "score": None, "comment": ""}]))
+        self.assertIn("Papers I noted", build_profile("", [{"ref": "X", "score": None, "comment": ""}]))
         self.assertEqual(stage(["12:00 tastecal.gates: reading A", "12:01 tastecal.gates: reading B"]), "Reading papers · 2 read")
         self.assertEqual(stage(["12:00 deepanalyze.gates: reading A"]), "Reading papers · 1 read")  # older logs
 

@@ -80,16 +80,6 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 input[type=range]{width:100%;accent-color:var(--accent);margin:2px 0 0}
 
 /* taste */
-details.more{border-top:1px solid var(--hair)}
-details.more > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:16px 22px}
-details.more > summary::-webkit-details-marker{display:none}
-details.more > summary .t{font-weight:600;font-size:14px;white-space:nowrap}
-details.more > summary .t em{font-style:normal;font-weight:400;color:var(--muted)}
-details.more > summary .s{flex:1;font-size:13.5px;color:var(--muted);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-details.more > summary .chev{width:8px;height:8px;border-right:1.6px solid var(--muted);border-bottom:1.6px solid var(--muted);transform:rotate(45deg);transition:transform .15s;margin:0 4px 3px;flex:none}
-details.more[open] > summary .chev{transform:rotate(225deg);margin-bottom:-3px}
-details.more > summary:hover .t{text-decoration:underline;text-underline-offset:3px}
-details.more > .inner{padding:2px 22px 22px;display:grid;gap:18px}
 .sub{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:14px;font-weight:600}
 .sub span{font-size:12.5px;font-weight:400;color:var(--muted)}
 .papers{display:grid;gap:8px}
@@ -120,6 +110,24 @@ details.more > .inner{padding:2px 22px 22px;display:grid;gap:18px}
 .check{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink-2);cursor:pointer}
 .check input{width:16px;height:16px;accent-color:var(--accent);margin:0}
 .samples{border-top:1px solid var(--hair)}
+textarea.plain{min-height:0;font:14px/1.5 var(--sans)}
+.tastebar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.tastebar .pick{flex:0 1 300px;min-width:200px}
+.tastebar .pick select{padding-block:8px;font-size:14px}
+.examples{display:grid;gap:6px}
+.examples .prow{color:var(--muted);font-size:14px;align-items:start;line-height:1.45}
+.examples .prow span{padding:2px 12px;min-width:0;overflow-wrap:anywhere}
+.examples .prow .s{text-align:center;font-family:var(--mono)}
+.examples .note{margin:2px 0 0;font-size:13px;color:var(--muted)}
+.replace{display:grid;gap:8px}
+.keys{flex-basis:100%;display:grid;gap:6px}
+.keys ul{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:13.5px;line-height:1.45;color:var(--ink-2)}
+.keys li{position:relative;padding-left:16px}
+.keys li::before{content:"";position:absolute;left:2px;top:.5em;width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.keys li.no::before{background:var(--bad)}
+.keys li.no{color:var(--bad)}
+.keys li.no a{color:inherit}
+.keys code{font:12.5px var(--mono);background:var(--sunk);padding:1px 5px;border-radius:5px;color:var(--ink)}
 
 /* footer of the form */
 .go{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 20px;padding:16px 22px;border-top:1px solid var(--hair);background:color-mix(in srgb,var(--sunk) 55%,var(--surface));border-radius:0 0 var(--r) var(--r)}
@@ -196,11 +204,15 @@ aside{position:sticky;top:18px;display:grid;gap:10px;min-width:0}
     <form id="form" class="card" novalidate>
       <div class="part">
         <label class="lab" for="seed"><b>Paper</b><span>title, link, DOI or id</span></label>
-        <input id="seed" class="seed" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. Planning-oriented Autonomous Driving">
+        <input id="seed" class="seed" type="text" autocomplete="off" spellcheck="false" placeholder="A title, link, DOI or arXiv id">
         <label class="field" for="scope" style="margin-top:12px"><span>Limit to a field <em class="opt">· optional</em></span>
-          <input id="scope" type="text" autocomplete="off" placeholder="e.g. autonomous driving. Leave empty for no limit">
+          <input id="scope" type="text" autocomplete="off" placeholder="The field to stay in, in a few words. Leave empty for no limit">
         </label>
         <p class="hint">With a limit, works from other fields (a generic diffusion model, a backbone) are listed as borrowed tools. They are not put on the map, read or audited, and do not use up the paper budget.</p>
+        <label class="field" for="must" style="margin-top:4px"><span>Must-read papers <em class="opt">· optional</em></span>
+          <textarea id="must" class="plain" rows="2" autocomplete="off" spellcheck="false" placeholder="One per line: a title, link, DOI or arXiv id"></textarea>
+        </label>
+        <p class="hint">They go on the map with the seed, even outside the field limit, and the map grows from them too. They count towards Max papers.</p>
       </div>
 
       <div class="grid2">
@@ -258,52 +270,45 @@ aside{position:sticky;top:18px;display:grid;gap:10px;min-width:0}
         </div>
       </div>
 
-      <details class="more" id="more">
-        <summary><span class="t">Your taste <em>· optional</em></span><span class="s" id="moreSum">What you find worth reading</span><i class="chev" aria-hidden="true"></i></summary>
-        <div class="inner">
-          <div class="pair">
-            <label class="field"><span>Start from</span>
-              <select id="preset"><option value="">Blank</option></select>
-            </label>
-            <label class="field"><span>Save as</span>
-              <input id="tname" type="text" autocomplete="off" placeholder="A name, to reuse it later">
-            </label>
-          </div>
-          <label class="field"><span>What you find worth reading</span>
-            <textarea id="taste" rows="6" placeholder="Problems I care about…&#10;Ideas I like…&#10;Ideas I usually skip…"></textarea>
-          </label>
-        </div>
-      </details>
-
       <div class="part samples">
-        <div class="lab"><b>Sample papers <em class="opt">· optional</em></b><span>any papers, related to the seed or not</span></div>
+        <div class="lab"><b>Your taste <em class="opt">· optional</em></b><span>papers you rated, with a score and a line on why</span></div>
+        <div class="tastebar">
+          <label class="pick"><select id="loadTaste" aria-label="Load a saved taste"><option value="">Load a saved taste</option></select></label>
+          <button type="button" class="tool" id="saveBtn">Save this taste</button>
+          <span class="hint" id="loaded"></span>
+        </div>
+        <div class="paste" id="saveBox" hidden>
+          <div class="row-btns">
+            <input id="tplName" type="text" autocomplete="off" placeholder="A name, e.g. my-taste" aria-label="Name of the taste">
+            <button type="button" class="btn sm" id="saveDo">Save</button><button type="button" class="tool" id="saveCancel">Cancel</button>
+          </div>
+          <div id="replaceRow" class="replace" hidden>
+            <p class="hint err" id="replaceMsg"></p>
+            <div class="row-btns"><button type="button" class="btn sm" id="replaceDo">Replace it</button><button type="button" class="tool" id="replaceCancel">Keep it</button></div>
+          </div>
+          <p class="hint">Saves these rated papers to taste.json in this project folder, under that name. You can also edit that file by hand.</p>
+        </div>
         <div class="phead" id="phead" hidden><span>Title or link</span><span>Score 0–1</span><span>Why</span><span></span></div>
         <div class="papers" id="papers"></div>
+        <div class="examples" id="examples-ph" aria-label="Examples"></div>
         <div class="tools">
           <button type="button" class="addp" id="addPaper">+ Add a paper you rated</button>
           <button type="button" class="tool" id="pasteBtn">Paste a list</button>
-          <label class="tool sel"><span>Load template</span><select id="loadTpl" aria-label="Load a template"><option value="">Load template</option></select></label>
-          <button type="button" class="tool" id="saveBtn">Save as template</button>
+          <button type="button" class="tool" id="importBtn">Import a file</button>
+          <input type="file" id="importFile" accept=".json,.yaml,.yml,.csv,.xlsx,.txt,.md" hidden>
         </div>
         <div class="paste" id="pasteBox" hidden>
           <textarea id="pasteText" rows="4" placeholder="One paper per line:  Title or link | score 0–1 | why&#10;Deep Residual Learning | 0.9 | one simple idea everyone reuses&#10;https://arxiv.org/abs/2306.13812 | 0.6"></textarea>
           <div class="row-btns"><button type="button" class="btn sm" id="pasteAdd">Add these</button><button type="button" class="tool" id="pasteCancel">Cancel</button></div>
         </div>
-        <div class="paste" id="saveBox" hidden>
-          <div class="row-btns">
-            <input id="tplName" type="text" autocomplete="off" placeholder="Template name, e.g. my-driving-taste" aria-label="Template name">
-            <button type="button" class="btn sm" id="saveDo">Save</button><button type="button" class="tool" id="saveCancel">Cancel</button>
-          </div>
-          <label class="check"><input type="checkbox" id="tplDefault" checked> Fill the page with it automatically next time</label>
-          <p class="hint">Saves these papers, and the taste text above, to taste.json in this project folder. You can also edit that file by hand.</p>
-        </div>
-        <p class="hint">Papers you liked or disliked, with your own score of their contribution from 0 to 1 and a line on why. A few examples steer the reading list more than any description. They never change how the evidence is judged.</p>
+        <p class="hint">Papers you liked or disliked, with your own score of their contribution from 0 to 1 and a line on why. Your taste is calibrated on them: with 3 or more, the report also gets its taste calibration, which runs after the map and takes about an hour more. They never change how the papers are read.</p>
       </div>
 
       <div class="go">
-        <p class="hint err" id="s2Hint" hidden>No Semantic Scholar key, so most paper searches will be refused and the map comes out thin.
-          The key is free: <a href="https://www.semanticscholar.org/product/api#api-key-form" target="_blank" rel="noopener">ask for one here</a>,
-          then restart this page with <code>export S2_API_KEY=...</code> set in the same terminal.</p>
+        <div class="keys" id="keys" hidden>
+          <ul id="keyList"></ul>
+          <p class="hint" id="keyHow"></p>
+        </div>
         <span class="summary" id="summary"></span>
         <button class="btn" id="go" type="submit">Generate report</button>
         <p class="hint" id="msg">You can close this tab while it runs. The report appears under Reports.</p>
@@ -330,7 +335,20 @@ const LANG = {"en": "English", "zh-CN": "中文"};
 const PROV = {"anthropic": "Claude", "claude-cli": "Claude (Claude Code)", "openai": "GPT", "codex-cli": "GPT (ChatGPT login)"};
 const ROUTE = {claude: {key: "anthropic", login: "claude-cli"}, gpt: {key: "openai", login: "codex-cli"}};
 const LOGIN_LABEL = {claude: "Claude Code login", gpt: "ChatGPT login"};
-let S = {providers: null, profiles: [], runs: [], family: "claude", via: {claude: "login", gpt: "login"}, lang: "en", open: new Set(), timer: null};
+let S = {providers: null, profiles: [], runs: [], family: "claude", via: {claude: "login", gpt: "login"}, lang: "en", open: new Set(), timer: null,
+         loaded: null,     // {key, title}: the saved taste last loaded or saved here; the run is made under its name
+         files: []};       // ratings files in the project folder (ratings*.json …), loadable directly
+// What to write as a rated paper, shown while the list is empty: in the report's language, never sent.
+const EXAMPLES = {
+  "en": {rows: [["Attention Is All You Need", "0.9", "Founding work: much later work builds on it."],
+                ["Attention Is All We Need", "0.6", "Takes an existing attention mechanism to a broad range of uses."],
+                ["Attention Is All He Needs", "0.3", "An application in a narrow area; it looks reasonably successful."]],
+         note: "For example. The last two are made up, to show what to write: a title, your score for its real contribution (0–1), and a line on why."},
+  "zh-CN": {rows: [["Attention Is All You Need", "0.9", "开创性工作，后面很多工作都基于这篇文章。"],
+                   ["Attention Is All We Need", "0.6", "把现有的 attention 机制推广到很广泛的应用上。"],
+                   ["Attention Is All He Needs", "0.3", "一个小领域里的应用，看起来还算成功。"]],
+            note: "示例。后两篇是虚构的，只是示范怎么填：标题、你给它真实贡献打的分（0–1）、一句理由。"},
+};
 const LOGIN = new Set(["claude-cli", "codex-cli"]);
 
 function seg(id, onPick) {
@@ -413,10 +431,10 @@ function summarize() {
   const eff = $("#effort").value ? `${$("#effort").selectedOptions[0].textContent.toLowerCase()} effort` : "";
   const scope = $("#scope").value.trim();
   $("#summary").textContent = [PROV[provider()], m, eff, `${$("#budget").value} papers`, LANG[S.lang], scope ? `limited to ${scope}` : ""].filter(Boolean).join(" · ");
-  const n = papers().length, own = $("#taste").value.trim();
-  const pre = S.profiles.find((x) => x.name === $("#preset").value);
-  $("#moreSum").textContent = pre ? pre.title : (own ? "Your own words" : "What you find worth reading");
+  const k = musts().length;
+  if (k) $("#summary").textContent += ` · ${k} must-read`;
 }
+const musts = () => [...new Set($("#must").value.split(/\n+/).map((x) => x.trim().replace(/^[-*•]\s*/, "")).filter(Boolean))];
 
 // --- rated papers -----------------------------------------------------------------------
 function addPaper(p = {}) {
@@ -431,7 +449,13 @@ function addPaper(p = {}) {
   $("#papers").appendChild(row); syncHead();
   return row;
 }
-function syncHead() { $("#phead").hidden = !$("#papers").children.length; }
+function syncHead() {
+  const empty = !$("#papers").children.length, ex = EXAMPLES[S.lang] || EXAMPLES.en;
+  $("#phead").hidden = false;
+  $("#examples-ph").hidden = !empty;
+  $("#examples-ph").innerHTML = empty ? ex.rows.map(([t, s, w]) => `<div class="prow"><span>${esc(t)}</span><span class="s">${esc(s)}</span><span>${esc(w)}</span><span></span></div>`).join("")
+    + `<p class="note">${esc(ex.note)}</p>` : "";
+}
 function papers() {
   return [...$("#papers").children].map((r) => {
     const s = r.querySelector(".score").value.trim();
@@ -468,7 +492,7 @@ function runRow(r) {
   const bill = r.billed_to === "plan" ? "billed to your plan" : r.billed_to === "api key" ? "billed to an API key" : "";
   const meta = [PROV[r.provider] || "", modelLine(r), bill, r.budget ? `${r.budget} papers` : "", LANG[r.language] || ""].filter(Boolean).join(" · ");
   const f = r.facts || {};
-  const facts = f.works ? [`${f.works} works`, f.threads ? `${f.threads} threads` : "", f.treasures ? `${f.treasures} to read` : ""].filter(Boolean).join(" · ") : "";
+  const facts = f.works ? [`${f.works} works`, f.threads ? `${f.threads} threads` : ""].filter(Boolean).join(" · ") : "";
   const base = `/${r.group}/${encodeURIComponent(r.id)}`, k = `${r.group}|${r.id}`;
   const acts = [
     r.has_report ? `<a class="open" href="${base}/report.html" target="_blank" rel="noopener">Open report ↗</a>` : "",
@@ -580,9 +604,9 @@ function reuse(r) {
   $("#plan").value = q.plan || "";
   $("#budget").value = q.budget || 30; showBudget();
   S.lang = q.language || "en"; setSeg("#lang", S.lang);
-  $("#preset").value = ""; $("#tname").value = q.taste_name || ""; $("#taste").value = q.taste || "";
+  $("#must").value = (q.must || []).join("\n");
+  S.loaded = q.taste_name ? {key: q.taste_key || "", title: q.taste_name} : null; showLoaded();
   $("#papers").innerHTML = ""; (q.papers || []).forEach(addPaper); syncHead();
-  $("#more").open = !!q.taste;
   summarize(); window.scrollTo({top: 0, behavior: "smooth"}); toast("Settings loaded");
 }
 
@@ -597,7 +621,7 @@ async function post(url, body) {
   if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
   return data;
 }
-const PAGE_API = 6;          // must match API_VERSION in serve.py
+const PAGE_API = 10;         // must match API_VERSION in serve.py
 function toast(t, bad) {
   const el = $("#toast"); el.textContent = t; el.hidden = false; el.classList.toggle("err", !!bad);
   clearTimeout(el._t); el._t = setTimeout(() => (el.hidden = true), bad ? 8000 : 2800);
@@ -608,8 +632,8 @@ $("#form").addEventListener("submit", async (e) => {
   if (!$("#seed").value.trim()) { msg.textContent = "Give a paper first."; msg.className = "hint err"; $("#seed").focus(); return; }
   $("#go").disabled = true;
   try {
-    const body = {seed: $("#seed").value, scope: $("#scope").value, provider: provider(), plan: $("#plan").value, model: $("#model").value, effort: $("#effort").value, key: $("#key").value,
-                  budget: Number($("#budget").value), language: S.lang, taste_name: $("#tname").value, taste: $("#taste").value, papers: papers()};
+    const body = {seed: $("#seed").value, scope: $("#scope").value, must: musts(), provider: provider(), plan: $("#plan").value, model: $("#model").value, effort: $("#effort").value, key: $("#key").value,
+                  budget: Number($("#budget").value), language: S.lang, taste_name: S.loaded ? S.loaded.title : "", taste_key: S.loaded ? S.loaded.key : "", papers: papers()};
     const r = await post("/api/runs", body);
     $("#key").value = "";
     msg.textContent = "Started. You can follow it under Reports."; msg.className = "hint ok";
@@ -628,19 +652,11 @@ function showBudget() { $("#budgetOut").innerHTML = `${$("#budget").value}<small
 seg("#family", (v) => { S.family = v; refreshModel(); });
 $("#plan").addEventListener("change", () => applyPlan($("#plan").value));
 seg("#via", (v) => { S.via[S.family] = v; refreshModel(); });
-seg("#lang", (v) => { S.lang = v; summarize(); });
+seg("#lang", (v) => { S.lang = v; syncHead(); summarize(); });
 $("#budget").addEventListener("input", showBudget);
 $("#model").addEventListener("input", summarize);
-["#taste", "#tname", "#scope"].forEach((s) => $(s).addEventListener("input", summarize));
+["#scope", "#must"].forEach((s) => $(s).addEventListener("input", summarize));
 $("#addPaper").addEventListener("click", () => addPaper().querySelector(".ref").focus());
-$("#preset").addEventListener("change", () => {
-  const p = S.profiles.find((x) => x.name === $("#preset").value);
-  $("#taste").value = p ? p.text.trim() : "";
-  if (p && p.kind === "yours" && !$("#tname").value) $("#tname").value = p.name;
-  const added = p ? addPapers(p.papers || []) : 0;
-  if (p) toast(added ? `Loaded ${p.title}: taste and ${added} sample paper${added > 1 ? "s" : ""}` : `Loaded ${p.title}`);
-  summarize();
-});
 $("#modelPick").addEventListener("change", () => {
   const v = $("#modelPick").value;
   $("#customRow").hidden = v !== "__other";
@@ -662,17 +678,74 @@ function addPapers(list) {
   syncHead(); summarize();
   return n;
 }
-function fillTemplates() {
-  const withPapers = S.profiles.filter((p) => (p.papers || []).length);
-  $("#loadTpl").innerHTML = `<option value="">Load template</option>` + withPapers.map((p) =>
-    `<option value="${esc(p.name)}">${esc(p.title || p.name)} · ${p.papers.length} paper${p.papers.length > 1 ? "s" : ""}</option>`).join("");
-  $("#loadTpl").closest(".sel").hidden = !withPapers.length;
+function when2(iso) { const d = new Date(String(iso || "").replace(" ", "T")); return isNaN(d) ? "" : d.toLocaleDateString(undefined, {year: "numeric", month: "short", day: "numeric"}); }
+function fillProfiles() {
+  const items = S.profiles, files = S.files || [];
+  const n = (k) => `${k} paper${k === 1 ? "" : "s"}`;
+  const saved = items.map((p) => {
+    const bits = [(p.papers || []).length ? n(p.papers.length) : "", p.saved ? `saved ${when2(p.saved)}` : ""].filter(Boolean).join(", ");
+    return `<option value="${esc(p.name)}">${esc(p.title || p.name)}${bits ? ` (${esc(bits)})` : ""}</option>`;
+  }).join("");
+  const ratings = files.map((f) => `<option value="file:${esc(f.file)}">${esc(f.file)} (${esc(n(f.papers))})</option>`).join("");
+  $("#loadTaste").innerHTML = `<option value="">Load a saved taste</option>`
+    + (saved ? `<optgroup label="Saved tastes (taste.json)">${saved}</optgroup>` : "")
+    + (ratings ? `<optgroup label="Ratings files in this folder">${ratings}</optgroup>` : "")
+    + (saved || ratings ? "" : `<option value="" disabled>Nothing saved yet</option>`);
 }
-$("#loadTpl").addEventListener("change", () => {
-  const p = S.profiles.find((x) => x.name === $("#loadTpl").value); $("#loadTpl").value = "";
+// The two free keys for paper data, each with what goes wrong without it and how to set it on this computer.
+const KEYS = [
+  {k: "s2_key", env: "S2_API_KEY", name: "Semantic Scholar key", url: "https://www.semanticscholar.org/product/api#api-key-form",
+   miss: "most paper searches are refused, so the map comes out thin"},
+  {k: "openalex_key", env: "OPENALEX_API_KEY", name: "OpenAlex key", url: "https://openalex.org/settings/api",
+   miss: "citation counts come from a small daily allowance shared by everyone on your network"},
+];
+function showKeys() {
+  const P = S.providers || {}; if (P.s2_key === undefined) return;       // an older server says nothing about keys
+  const missing = KEYS.filter((x) => !P[x.k]);
+  $("#keys").hidden = false;
+  $("#keyList").innerHTML = KEYS.map((x) => P[x.k]
+    ? `<li class="ok"><b>${esc(x.name)}</b> set</li>`
+    : `<li class="no"><b>${esc(x.name)}</b> not set: ${esc(x.miss)}. <a href="${esc(x.url)}" target="_blank" rel="noopener">Get a free one</a>.</li>`).join("");
+  const cmds = missing.map((x) => P.windows ? `<code>setx ${x.env} "your-key"</code>` : `<code>export ${x.env}=your-key</code>`).join(P.windows ? " and " : " and ");
+  $("#keyHow").innerHTML = !missing.length ? "" : P.windows
+    ? `To set ${missing.length > 1 ? "them" : "it"}, run ${cmds} in PowerShell, then reload this page.`
+    : `To set ${missing.length > 1 ? "them" : "it"}, run ${cmds} in the terminal, then start <code>python3 -m tastecal serve</code> again in that terminal.`;
+}
+function showLoaded() { $("#loaded").textContent = S.loaded ? `Using “${S.loaded.title}”` : ""; }
+// Loading a saved taste replaces the rated papers on the page with its own.
+$("#loadTaste").addEventListener("change", async () => {
+  const v = $("#loadTaste").value; $("#loadTaste").value = "";
+  if (v.startsWith("file:")) {                 // a ratings file in the project folder: its papers replace the list
+    const file = v.slice(5);
+    try {
+      const d = await post("/api/ratings/file", {file});
+      $("#papers").innerHTML = ""; (d.papers || []).forEach(addPaper);
+      S.loaded = null; showLoaded(); syncHead(); summarize();
+      toast(`Loaded ${(d.papers || []).length} rated papers from ${file}`);
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+  const p = S.profiles.find((x) => x.name === v);
   if (!p) return;
-  const n = addPapers(p.papers || []);
-  toast(n ? `Added ${n} paper${n > 1 ? "s" : ""} from ${p.title}` : "Those papers are already in the list");
+  $("#papers").innerHTML = ""; (p.papers || []).forEach(addPaper);
+  S.loaded = {key: p.name, title: p.title || p.name}; showLoaded(); syncHead(); summarize();
+  toast(`Loaded ${p.title || p.name}: ${(p.papers || []).length} rated paper${(p.papers || []).length === 1 ? "" : "s"}`);
+});
+// A ratings file (as fit --rated reads it: .json, .yaml, .csv, .xlsx, or "title | score | why" lines) adds its papers.
+$("#importBtn").addEventListener("click", () => $("#importFile").click());
+$("#importFile").addEventListener("change", () => {
+  const f = $("#importFile").files[0]; $("#importFile").value = "";
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onload = async () => {
+    try {
+      const d = await post("/api/ratings/import", {name: f.name, data: rd.result});
+      const n = addPapers(d.papers || []);
+      toast(n ? `Added ${n} paper${n > 1 ? "s" : ""} from ${f.name}` : `Nothing new in ${f.name}`);
+    } catch (err) { toast(err.message, true); }
+  };
+  rd.onerror = () => toast(`Could not read ${f.name}`, true);
+  rd.readAsDataURL(f);
 });
 $("#pasteBtn").addEventListener("click", () => { $("#pasteBox").hidden = false; $("#saveBox").hidden = true; $("#pasteText").focus(); });
 $("#pasteCancel").addEventListener("click", () => { $("#pasteBox").hidden = true; });
@@ -688,36 +761,39 @@ $("#pasteAdd").addEventListener("click", () => {
   $("#pasteText").value = ""; $("#pasteBox").hidden = true;
   toast(n ? `Added ${n} paper${n > 1 ? "s" : ""}` : "Nothing new to add");
 });
-$("#saveBtn").addEventListener("click", () => { $("#saveBox").hidden = false; $("#pasteBox").hidden = true; $("#tplName").value = $("#tname").value; $("#tplName").focus(); });
+$("#saveBtn").addEventListener("click", () => { $("#saveBox").hidden = false; $("#pasteBox").hidden = true; $("#replaceRow").hidden = true; $("#tplName").value = S.loaded ? S.loaded.title : ""; $("#tplName").focus(); });
 $("#saveCancel").addEventListener("click", () => { $("#saveBox").hidden = true; });
-$("#saveDo").addEventListener("click", async () => {
+async function saveTaste(overwrite) {
   const name = $("#tplName").value.trim();
   if (!name) { $("#tplName").focus(); return; }
   try {
-    const r = await post("/api/profiles", {name, taste: $("#taste").value, papers: papers(), default: $("#tplDefault").checked});
-    S.profiles = r.profiles || S.profiles; fillProfiles(); fillTemplates();
-    $("#saveBox").hidden = true; toast(`Saved as template “${name}”`);
-  } catch (err) { toast(err.message); }
-});
-function fillProfiles() {
-  const cur = $("#preset").value, groups = {yours: "Your taste (taste.json)", preset: "Presets"};
-  $("#preset").innerHTML = `<option value="">Blank</option>` + ["yours", "preset"].map((k) => {
-    const items = S.profiles.filter((p) => p.kind === k); if (!items.length) return "";
-    return `<optgroup label="${groups[k]}">${items.map((p) => `<option value="${esc(p.name)}">${esc(p.title || p.name)}${p.default ? " · default" : ""}</option>`).join("")}</optgroup>`;
-  }).join("");
-  $("#preset").value = cur;
+    const r = await fetch("/api/profiles", {method: "POST", headers: {"Content-Type": "application/json", "X-TasteCal": "1"},
+      // the rated papers, into the taste loaded here while its name is unchanged
+      body: JSON.stringify({name, key: S.loaded && S.loaded.title === name ? S.loaded.key : "", papers: papers(), overwrite})});
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 409 && d.exists) {        // one taste per name: ask before replacing it
+      $("#replaceMsg").textContent = `There is already a taste called “${d.title}”${d.saved ? `, saved ${when2(d.saved)}` : ""}. Replace it?`;
+      $("#replaceRow").hidden = false; $("#replaceDo").focus(); return;
+    }
+    if (r.status === 404 && d.error === "not found") { $("#stale").hidden = false; throw new Error("The app in your terminal is older than this page. Restart it (see the note at the top)."); }
+    if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`);
+    S.profiles = d.profiles || S.profiles; fillProfiles();
+    S.loaded = {key: d.saved, title: name}; showLoaded();
+    $("#saveBox").hidden = true; $("#replaceRow").hidden = true; toast(`Saved “${name}”`);
+  } catch (err) { toast(err.message, true); }
 }
+$("#saveDo").addEventListener("click", () => saveTaste(false));
+$("#tplName").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveTaste(false); } });
+$("#tplName").addEventListener("input", () => { $("#replaceRow").hidden = true; });
+$("#replaceDo").addEventListener("click", () => saveTaste(true));
+$("#replaceCancel").addEventListener("click", () => { $("#replaceRow").hidden = true; $("#tplName").focus(); $("#tplName").select(); });
 (async () => {
   try {
     const st = await (await fetch("/api/state")).json();
     if (st.api !== PAGE_API) $("#stale").hidden = false;
     S.providers = st.providers; S.profiles = st.profiles || []; S.runs = st.runs || [];
-    fillProfiles(); fillTemplates();
-    const def = S.profiles.find((p) => p.default);
-    if (def) {                                   // your default taste from taste.json fills the page
-      $("#preset").value = def.name; $("#taste").value = def.text || ""; $("#tname").value = def.title || def.name;
-      addPapers(def.papers || []);
-    }
+    S.files = st.files || [];
+    fillProfiles(); syncHead();                  // no rated papers to start with: a saved taste is one choice away
     // Your subscription first: Claude Code, else Codex. An API key only when neither tool is installed.
     const P = S.providers;
     if (!P["claude-cli"].available && P["codex-cli"].available) S.family = "gpt";
@@ -730,7 +806,7 @@ function fillProfiles() {
     // The subscription shortcut is gone from the page (model, sign-in and papers are set directly below);
     // forget a choice an older page saved, so it no longer changes the papers on load.
     try { localStorage.removeItem("tastecal.plan"); localStorage.removeItem("deepanalyze.plan"); } catch (e) { /* storage off: fine */ }
-    $("#s2Hint").hidden = !!P.s2_key || P.s2_key === undefined;
+    showKeys();
     renderRuns();
   } catch { $("#msg").textContent = "Could not reach the local server. Start it with: python3 -m tastecal serve"; $("#msg").className = "hint err"; }
 })();

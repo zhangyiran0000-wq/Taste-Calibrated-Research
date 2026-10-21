@@ -88,6 +88,30 @@ class Http:
         self.filled = 0                        # gaps fetched successfully in this run
         self.stale_used = 0                    # expired entries used because a new fetch failed
         self.rate_limited = 0                  # 429 answers seen
+        # sources whose 429 means a daily allowance is spent (daily_limited): host -> retries, host -> why it is not
+        # asked again in this run, host -> params sent with each request (an API key) but kept out of the cache key,
+        # the gaps file, the log and every error
+        self.fail_fast: Dict[str, int] = {}
+        self.off: Dict[str, str] = {}
+        self.secrets: Dict[str, Dict[str, str]] = {}
+
+    def daily_limited(self, host: str, retries: int = 2, secret: Optional[Dict[str, str]] = None) -> None:
+        """A source whose 429 means its daily allowance is used up: a 429 is final (no waiting, no retry), and once it
+        refuses it is not asked again in this run (answers already cached are still used); other failures get few
+        retries. `secret`: request parameters such as an API
+        key, added to every request to it and never written anywhere."""
+        self.fail_fast[host] = retries
+        sec = {k: v for k, v in (secret or {}).items() if v}
+        if sec:
+            self.secrets[host] = sec
+        else:
+            self.secrets.pop(host, None)
+
+    def _scrub(self, text: str) -> str:
+        for sec in self.secrets.values():
+            for v in sec.values():
+                text = text.replace(v, "***").replace(urllib.parse.quote(v, safe=""), "***")
+        return text
 
     # -- gaps ----------------------------------------------------------------
     def load_gaps(self, path: str) -> int:
@@ -172,10 +196,8 @@ class Http:
     def _cache_put(self, key: str, value: Any) -> None:
         p = self._cache_path(key)
         if p:
-            tmp = p + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({ENVELOPE: 1, "t": self.clock(), "v": value}, f)
-            os.replace(tmp, p)
+            from tastecal.core.files import atomic_write
+            atomic_write(p, json.dumps({ENVELOPE: 1, "t": self.clock(), "v": value}))
 
     def _expired(self, key: str, fetched_at: float) -> bool:
         kind = kind_of(key)
@@ -195,6 +217,12 @@ class Http:
                 if self.replay or not self._expired(key, t):
                     return hit
                 stale = hit
+        host = urllib.parse.urlsplit(url).hostname or ""
+        if host in self.off:                     # it refused earlier in this run: not asked again
+            if stale is not None:
+                self.stale_used += 1
+                return stale
+            raise HttpError(429, url, f"not asked again: {self.off[host]}")
         if self.replay:
             # The earlier attempt never got this far (it stopped here), or this request failed then: either way the
             # replay is over. Go live from here on; cached downloads are still used, only missing ones are fetched.
@@ -217,25 +245,34 @@ class Http:
     # -- requests --------------------------------------------------------------
     def _send(self, req: urllib.request.Request, timeout: float, retries: int) -> bytes:
         delay = 2.0
+        host = urllib.parse.urlsplit(req.full_url).hostname or ""
+        if host in self.fail_fast:
+            retries = min(retries, self.fail_fast[host])
+        real = req                               # what is sent; `req` (without the secret) is what is shown
+        sec = self.secrets.get(host)
+        if sec and req.get_method() == "GET":
+            real = urllib.request.Request(req.full_url + ("&" if "?" in req.full_url else "?") + urllib.parse.urlencode(sec),
+                                          headers=dict(req.header_items()))
         for attempt in range(retries + 1):
             wait = self.min_interval - (self.clock() - self._last)
             if wait > 0:
                 self.sleeper(wait)
             self._last = self.clock()
             try:
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                with urllib.request.urlopen(real, timeout=timeout) as resp:
                     data = resp.read()
                 # Answered: relax the spacing a 429 widened, step by step, back to the polite default.
                 if self.min_interval > self.base_interval:
                     self.min_interval = max(self.base_interval, self.min_interval * 0.85)
                 return data
             except urllib.error.HTTPError as e:
-                body = e.read().decode("utf-8", "replace") if hasattr(e, "read") else ""
+                body = self._scrub(e.read().decode("utf-8", "replace") if hasattr(e, "read") else "")
                 if e.code == 429:
                     self.rate_limited += 1
                     # Slow every later request down too: a refused burst means the shared pool is busy.
                     self.min_interval = min(max(self.min_interval * 1.5, 1.1), 5.0)
-                if e.code in (429, 500, 502, 503, 504, 529) and attempt < retries:
+                spent = e.code == 429 and host in self.fail_fast     # a daily allowance used up: waiting will not help
+                if e.code in (429, 500, 502, 503, 504, 529) and attempt < retries and not spent:
                     told = retry_after_seconds(e.headers.get("Retry-After") if e.headers else None, self.clock())
                     base = delay * (2.5 if e.code == 429 else 1.0)
                     sleep_for = min(told if told is not None else base * (0.8 + 0.4 * random.random()), 120.0)
@@ -243,14 +280,19 @@ class Http:
                     self.sleeper(sleep_for)
                     delay = min(delay * 2, 60)
                     continue
+                if spent and host not in self.off:
+                    self.off[host] = "it answered HTTP 429: its daily allowance is used up"
+                    log.warning("%s refused with HTTP 429: its daily allowance is used up (%s). It is not asked again "
+                                "in this run; answers already cached are still used.", host,
+                                "with your API key" if host in self.secrets else "no API key was set")
                 raise HttpError(e.code, req.full_url, body)
             except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
                 if attempt < retries:
-                    log.info("Network error (%s), retrying in %.1fs", e, delay)
+                    log.info("Network error (%s), retrying in %.1fs", self._scrub(str(e)), delay)
                     self.sleeper(delay)
                     delay = min(delay * 2, 60)
                     continue
-                raise HttpError(0, req.full_url, str(e))
+                raise HttpError(0, req.full_url, self._scrub(str(e)))
         raise HttpError(0, req.full_url, "exhausted retries")
 
     def get_json(self, url: str, params: Optional[Dict[str, Any]] = None,

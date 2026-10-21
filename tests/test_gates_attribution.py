@@ -68,13 +68,21 @@ class ConfounderTest(unittest.TestCase):
         head = dict(minor, numbers_severity="headline", numbers_note="abstract says 54.9, Table 3 says 44.7")
         self.assertEqual(verdict(ans(checks=head), QUIET, None, TH), "unattributed")
 
-    def test_adoption_by_the_field_overrides(self):
+    def test_adoption_by_the_field_does_not_override(self):
         g = ans(robustness="single", checks={"fair_baselines": "no", "novelty_ablation": "no", "baselines_note": "x"})
-        self.assertEqual(verdict(g, ADOPTED, None, TH), "solid")
+        self.assertEqual(verdict(g, ADOPTED, None, TH), "unattributed")
 
-    def test_incremental_stays_incremental(self):
+    def test_incremental_precedes_attribution(self):
+        # "Gain not attributed" is about a work that would otherwise earn its station; one with neither a reason nor
+        # robust evidence is incremental whatever else is wrong with its comparison.
         g = ans(reason_type="none", robustness="single", checks={"fair_baselines": "no", "novelty_ablation": "no"})
         self.assertEqual(verdict(g, QUIET, None, TH), "incremental")
+
+    def test_lever_whose_quote_is_not_in_the_text_does_not_count(self):
+        lv = {"lever": "unequal-tuning", "status": "present", "where": "Table 4", "note": "only the method was swept"}
+        self.assertEqual(verdict(ans(levers=[dict(lv, quote_found=False)]), QUIET, None, TH), "solid")
+        self.assertEqual(verdict(ans(levers=[dict(lv, quote_found=True)]), QUIET, None, TH), "unattributed")
+        self.assertEqual(verdict(ans(levers=[lv]), QUIET, None, TH), "unattributed")     # older answers: unchecked
 
     def test_not_delivered_wins(self):
         g = ans(delivery="not", checks={"fair_baselines": "no", "novelty_ablation": "no"})

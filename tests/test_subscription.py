@@ -249,6 +249,49 @@ class ToolsTest(unittest.TestCase):
             llm.complete("S", "P")
         self.assertIn("codex login", str(caught.exception))
 
+    def test_a_stuck_call_is_ended_with_everything_it_started(self):
+        # Claude Code starts a helper that keeps the output pipe open, then hangs: the call must end anyway, its
+        # helper with it, and be tried again (on Windows a plain timeout would wait on that pipe forever)
+        import subprocess
+        from tastecal.core import llm as L
+        pidfile = os.path.join(self.dir, "helper.pid")
+        stuck = script(self.dir, "claude-stuck", (
+            "import subprocess, sys, time\n"
+            "if '--version' in sys.argv: print('2.1.0'); sys.exit(0)\n"
+            "h = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+            f"open({pidfile!r}, 'w').write(str(h.pid))\n"
+            "time.sleep(120)\n"))
+        t0 = time.time()
+        with self.assertRaises(subprocess.TimeoutExpired):
+            L.run_capped([stuck], "prompt", self.dir, dict(os.environ), timeout=1)
+        self.assertLess(time.time() - t0, 15)
+        with open(pidfile) as f:
+            pid = int(f.read())
+        time.sleep(0.3)
+        state = ""
+        try:
+            with open(f"/proc/{pid}/status") as f:
+                state = next((ln.split()[1] for ln in f if ln.startswith("State:")), "")
+        except OSError:
+            pass                                                    # gone
+        self.assertIn(state, ("", "Z", "X"))                        # the helper was ended too
+        ok = L.run_capped([sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"], "hi", self.dir, dict(os.environ))
+        self.assertEqual((ok.returncode, ok.stdout.strip()), (0, "HI"))
+        # through the model class: the timeout is a model-call failure that is tried again, never a hang
+        os.environ["CLAUDE_BIN"] = stuck
+        saved = L.CALL_TIMEOUT
+        L.CALL_TIMEOUT = 1
+        try:
+            llm = make_llm(Config(provider="claude-cli", cache_dir=None), None)
+            llm.WAITS = (0,)
+            llm.sleeper = lambda s: None
+            with self.assertLogs("tastecal.llm", "WARNING") as logs, self.assertRaises(LLMError) as caught:
+                llm.complete("S", "P")
+            self.assertIn("timed out", str(caught.exception))
+            self.assertTrue(any("trying again" in m for m in logs.output))
+        finally:
+            L.CALL_TIMEOUT = saved
+
     def test_old_allow_name_still_works(self):
         os.environ["TASTECAL_CLAUDE_KEEP_KEY"] = "1"
         os.environ["ANTHROPIC_API_KEY"] = "sk-x"
@@ -382,8 +425,48 @@ class PageTest(unittest.TestCase):
         st = providers_state()
         self.assertEqual({p["key"] for p in st["plans"]}, set(PLANS))
         self.assertIn("s2_key", st)
+        self.assertIn("openalex_key", st)                               # the page shows both keys
         self.assertEqual(clean_request({"seed": "x", "provider": "claude-cli", "plan": "claude-pro"})["plan"], "claude-pro")
         self.assertEqual(clean_request({"seed": "x", "provider": "claude-cli", "plan": "nope"})["plan"], "")
+
+    def test_a_key_saved_with_setx_counts_on_windows(self):
+        """setx saves a key for windows opened later; one opened before (or a tab of a terminal or editor that was
+        already running) does not have it, so it is read from where setx saved it."""
+        import types
+        from unittest import mock
+        from tastecal.core import config
+        reg = types.ModuleType("winreg")
+        reg.HKEY_CURRENT_USER, reg.HKEY_LOCAL_MACHINE, reg.REG_SZ, reg.REG_EXPAND_SZ = 1, 2, 1, 2
+        saved = {(1, "Environment"): {"OPENALEX_API_KEY": (" abc123 ", 1)}}
+
+        class Key:
+            def __init__(self, root, path):
+                self.values = saved.get((root, path))
+
+            def __enter__(self):
+                if self.values is None:
+                    raise OSError("no such key")
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def query(k, name):
+            if name not in k.values:
+                raise OSError("no such value")
+            return k.values[name]
+        reg.OpenKey, reg.QueryValueEx = Key, query
+        env = {k: v for k, v in os.environ.items() if k not in ("OPENALEX_API_KEY", "S2_API_KEY")}
+        with mock.patch.dict(sys.modules, {"winreg": reg}), mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(config.os, "name", "nt"):
+            self.assertEqual(config.Config().openalex_api_key, "abc123")
+            self.assertEqual(config.env_value("S2_API_KEY"), "")
+            st = providers_state()
+            self.assertEqual((st["openalex_key"], st["s2_key"], st["windows"]), (True, False, True))
+            os.environ["OPENALEX_API_KEY"] = "from-this-window"
+            self.assertEqual(config.env_value("OPENALEX_API_KEY"), "from-this-window")   # the window's own wins
+        with mock.patch.dict(sys.modules, {"winreg": reg}), mock.patch.dict(os.environ, env, clear=True):
+            self.assertEqual(config.env_value("OPENALEX_API_KEY"), "")         # elsewhere only the environment
 
     def test_waiting_stage(self):
         today = dt.date.today().isoformat()

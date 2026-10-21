@@ -43,7 +43,8 @@ def outside_sample(g, field_name: str, seed_title: str, cutoff: str, on_map: set
         return []
     year = int(cutoff[:4]) if cutoff[:4].isdigit() else None
     out, seen = [], set()
-    for q in [x for x in (field_name, seed_title) if x][:2]:
+    from tastecal.core.model import search_queries
+    for q in search_queries([seed_title, field_name])[:2]:
         try:
             hits = g.src.search(q, year, limit=OUTSIDE_MAX)
         except Exception as e:  # rate limited, offline

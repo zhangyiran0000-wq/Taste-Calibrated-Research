@@ -34,18 +34,24 @@ def card_block(item: Item, card: Optional[Card]) -> str:
 
 
 # ---------------------------------------------------------------------------
-def cards(items: List[Item], mentions: Dict[str, List[str]]) -> str:
+def cards(items: List[Item], mentions: Dict[str, List[str]], texts: Optional[Dict[str, str]] = None) -> str:
+    """texts: {id: excerpt of the full paper} for works read in full (the seed), used instead of the abstract."""
     rows = []
     for it in items:
         said = mentions.get(it.id) or []
         said_txt = " | ".join(clip(s, 260) for s in said[:3])
+        full = (texts or {}).get(it.id)
+        body = (f"Text (excerpts of the full paper: start, then conclusion or limitations): {clip(full, 7500)}" if full
+                else f"Text: {clip(it.abstract, 1400) or '(no abstract available)'}")
         rows.append(
             f"[{it.id}] {it.title} ({it.date or it.year or '?'}, {it.kind}{', ' + it.venue if it.venue else ''})\n"
-            f"Text: {clip(it.abstract, 1400) or '(no abstract available)'}\n"
+            f"{body}\n"
             + (f"How other works describe it: {said_txt}\n" if said_txt else "")
         )
     return f"""TASK: cards
 Reduce each item to a problem → move → limitation card. Use only the text given. If the text is thin, say less rather than guess.
+A limitation is a limit of the WORK, never of the text you were given: when only a title or a short text is available,
+leave "leaves" empty rather than writing that the text does not describe the method, the results or the data.
 
 For each item return an object with:
 - "id": exactly as given
@@ -106,6 +112,21 @@ Candidates:
 Return a JSON array."""
 
 
+def home_field(item: Item, card) -> str:
+    return f"""TASK: home_field
+Name the research field of this work in 2 to 5 words, at the level a researcher would call "my field": broad enough
+to hold its neighbouring problems (the systems it builds on, tests or competes with), but not the fields its tools come
+from. Not the paper's own narrow subproblem (too narrow), not a whole discipline (too broad), and not the field of a
+technique it merely borrows.
+
+Work: {item.title} ({item.year or '?'})
+Starts from: {clip(getattr(card, "inherits", "") or "", 400)}
+Move: {clip(getattr(card, "move", "") or "", 400)}
+Abstract: {clip(item.abstract, 900) or '(none)'}
+
+Return {{"field": "..."}}"""
+
+
 def scope_check(scope: str, items: List[Item]) -> str:
     rows = "\n".join(
         f"[{it.id}] {it.title} ({it.date or it.year or '?'}, {it.kind}{', ' + it.venue if it.venue else ''})\n"
@@ -129,7 +150,7 @@ def problem_queries(problems: List[Problem], field_hint: str, names: Dict[str, s
     return f"""TASK: problem_queries
 Field context: {field_hint}
 
-For each open problem, write 1-2 keyword-style search queries (4-8 words) that would find papers whose main contribution addresses it. Use the field's own vocabulary.
+For each open problem, write 1-2 keyword-style search queries (4-8 words) that would find papers whose main contribution addresses it. Use the field's own vocabulary. Write every query in English, whatever language the text above is in: the search engines index English titles and abstracts.
 
 Problems:
 {rows}
@@ -202,11 +223,14 @@ def works_block(nodes: Iterable[Node]) -> str:
     out = []
     for n in nodes:
         c = n.card
+        borrowed = getattr(n, "borrowed", False)
         if c:
             out.append(f"[{n.item.id}] {c.short} ({n.item.date or n.item.year}, {n.item.kind}): inherits: {c.inherits} "
-                       f"| move: {c.move} | insight: {c.insight} | leaves: {'; '.join(c.leaves)}")
+                       f"| move: {c.move} | insight: {c.insight} | leaves: {'; '.join(c.leaves) if not borrowed else ''}")
         else:
             out.append(f"[{n.item.id}] {n.item.title} ({n.item.year})")
+        if borrowed:
+            out[-1] += " | Borrowed tool from another field; do not treat its own open problems as this field's agenda."
     return "\n".join(out)
 
 
@@ -279,12 +303,13 @@ Return:
 {{"field": "the field's name in a few words",
   "goal": "what the field is ultimately trying to do, one sentence",
   "core_tension": "the trade-off every work moves along, one or two sentences",
+  "keywords": ["4-8 short terms a researcher would search for to find this line of work"],
   "enabling_insights": [{{"text": "a fact about the world that made progress possible", "nodes": ["ids that established it"]}}],
   "driving_forces": [{{"id": "F1", "name": "3-6 words", "statement": "2-3 sentences: the constraint, why it bites, which moves it allows",
                       "root_type": "hardware|math|data|goal|economics|other", "threads": ["T1"]}}],
   "external_drivers": [{{"text": "an event outside the papers that changed the pressure", "year": 2020, "nodes": []}}],
   "knock_on": [{{"from_thread": "T2", "to_thread": "T3", "via": "<work id>", "text": "how solving one problem created another"}}],
-  "open_problems": ["one sentence each"],
+  "open_problems": ["the 3-4 most important, one sentence each"],
   "roles": {{"<work id>": "foundation|driver|turning-point|improvement|branch|frontier|explainer"}}}}
 Use 1-4 driving forces; merge threads whose ladders end at the same root. Every thread belongs to exactly one force.
 Give a role to every work except the seed."""

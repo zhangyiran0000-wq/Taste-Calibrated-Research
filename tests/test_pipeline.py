@@ -55,8 +55,10 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(validate(graph), [])
         self.assertEqual(graph["nodes"][0]["role"] if graph["nodes"][0]["id"] == graph["meta"]["seed"] else "seed", "seed")
         self.assertNotIn("[[not-a-node]]", " ".join(graph["story"]["paragraphs"]))
-        for task in ("cards", "classify_links", "ledger_update", "threads", "why_ladders", "field", "predict", "narrative"):
+        for task in ("cards", "classify_links", "ledger_update", "threads", "why_ladders", "field", "narrative"):
             self.assertIn(task, llm.tasks)
+        self.assertNotIn("predict", llm.tasks)              # the backtest is off unless asked for
+        self.assertEqual(graph["check"], {})
         html = render_html(graph)
         self.assertIn("<!doctype html>", html)
         self.assertIn('"schema":"deepanalyze.graph/1"', html)
@@ -71,6 +73,39 @@ class PipelineTest(unittest.TestCase):
             with open(os.path.join(root, ex, "graph.json"), encoding="utf-8") as f:
                 graph = json.load(f)
             self.assertEqual(validate(graph), [], ex)
+
+    def test_must_read_papers_join_the_map_with_the_seed(self):
+        from fakes import CORPUS
+
+        class Named(FakeSource):
+            def resolve(self, ref):
+                if ref == "nope":
+                    raise LookupError("not found")
+                return CORPUS["e" if ref.startswith("Epsilon") else "seed"]
+        cfg = Config(budget=4, max_rounds=3, use_openalex=False, use_web=False, cache_dir=tempfile.mkdtemp(),
+                     must=("Epsilon: Rank Allocation", "nope", "SeedNet"))
+        llm = FakeLLM()
+        g = Grower(cfg, Named(), llm).run("seed")
+        # the fake corpus is shared, and other tests' synthesis renames its items: find it by its own id
+        e = next(n for n in g.nodes.values() if n.item.ids.get("s2") == "e")
+        self.assertTrue(e.must)
+        self.assertEqual((e.round, e.direction, e.hop), (0, "must", 0))
+        self.assertTrue(e.card)                                         # read like the seed
+        self.assertEqual(g.must_missing, ["nope"])                      # one that cannot be found is listed
+        self.assertEqual(g.rounds[0]["must"], [e.item.id])              # the seed itself is not taken twice
+        self.assertIn("must-read", g.rounds[0]["note"])
+        self.assertIn(e.item.id, g.rounds[1]["expanded"])               # opened in the first round with the seed
+        self.assertLessEqual(len(g.nodes), 4)                           # and counted towards the budget
+        graph = synthesize(g, llm, "seed")
+        self.assertEqual(validate(graph), [])
+        e_id = next(n["id"] for n in graph["nodes"] if n["ids"].get("s2") == "e")
+        self.assertTrue(next(n for n in graph["nodes"] if n["id"] == e_id)["must"])
+        self.assertEqual(graph["rounds"][0]["must"], [e_id])            # under its id in the report
+        self.assertEqual(graph["meta"]["must_missing"], ["nope"])
+        self.assertNotIn("must", next(n for n in graph["nodes"] if n["id"] == graph["meta"]["seed"]))
+        plain, _ = self.grow()
+        self.assertNotIn("must", plain.rounds[0])                       # no must-read papers: as before
+        self.assertEqual(plain.rounds[0]["note"], "Read the seed; open its limitations")
 
     def test_extract_json(self):
         self.assertEqual(extract_json('Sure!\n```json\n{"a": [1, 2]}\n```'), {"a": [1, 2]})

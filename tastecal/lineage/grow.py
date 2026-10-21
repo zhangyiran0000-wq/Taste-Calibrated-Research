@@ -28,7 +28,7 @@ from tastecal.prompts import lineage as prompts
 from tastecal.core.config import Config
 from tastecal.core.llm import LLM
 from tastecal.core.model import (DROP_TYPES, RELATION_TYPES, RELATION_WEIGHT, Candidate, Card, Edge,
-                    Ledger, Node, norm_title, title_similarity)
+                    Ledger, Node, norm_title, search_queries, title_similarity)
 from tastecal.sources import Source, WebSource
 from tastecal.sources.openalex import OpenAlex
 from tastecal.sources.semantic_scholar import influence
@@ -39,6 +39,21 @@ CLASSIFY_BATCH = 12
 SCOPE_BATCH = 12
 CARD_BATCH = 6
 LEDGER_BATCH = 10
+
+
+# "Limitations" that describe the text the model was given, not the work: they must not open problems in the ledger.
+ABOUT_THE_TEXT = re.compile(
+    r"(所给|给定|提供的)?(文本|摘要|材料|信息)[^。]{0,12}(未|没有|并未|不)(说明|提供|给出|描述|提及|介绍)"
+    r"|(未|没有)(说明|提供|给出|描述)[^。]{0,10}(方法|结果|实验|数据|细节)"
+    r"|\b(the )?(given |provided )?(text|abstract|summary|excerpt|information)\b[^.]{0,40}\b(does not|doesn't|did not|"
+    r"fails to|is too (short|thin))\b"
+    r"|\b(no|insufficient|not enough|limited) (details?|information|text|abstract)\b[^.]{0,30}\b(given|provided|available)\b"
+    r"|\bnot (stated|described|specified|reported) in the (text|abstract)\b", re.I)
+
+
+def real_leaves(leaves) -> List[str]:
+    """Limitations of the work, without the ones that only say the text was too thin to tell."""
+    return [x for x in leaves or [] if isinstance(x, str) and x.strip() and not ABOUT_THE_TEXT.search(x)]
 
 
 def chunks(xs: list, n: int):
@@ -64,10 +79,20 @@ class Grower:
         # Field limit (cfg.scope): works judged outside it are listed here, not mapped. norm title -> row.
         self.imports: Dict[str, dict] = {}
         self._scope: Dict[str, Tuple[bool, str]] = {}      # norm title -> (in scope, its own field)
+        # Without --scope, the seed's own field, inferred once. Works outside it may join the map as borrowed tools
+        # (one hop from an in-field work, never expanded, limitations not in the ledger) instead of growing a
+        # second map around the tool.
+        self.home = ""
         # Every work seen while growing (references, citers, search hits), mapped or not: norm title ->
         # {"citations", "date"}. The audit ranks attention against this neighbourhood instead of the map alone,
         # because the map was built from the important works and would make well-cited ones look unnoticed.
         self.seen: Dict[str, dict] = {}
+
+    BORROWED_SHARE = 0.2            # at most this share of the budget for borrowed tools
+
+    @property
+    def field(self) -> str:
+        return self.cfg.scope or self.home
 
     def _saw(self, items) -> None:
         for it in items:
@@ -111,17 +136,48 @@ class Grower:
             self.edges[key] = e
             self.edge_strength[key] = strength
 
-    def _make_cards(self, nodes: List[Node]) -> None:
+    def _fill_abstracts(self, nodes: List[Node]) -> None:
+        """Works the search returned without an abstract (often paywalled journals) get one from OpenAlex or the
+        publisher's page, so their card is not written from the title alone."""
+        from tastecal.sources.fulltext import fill_abstract
+        http = getattr(self.src, "http", None)
+        for n in nodes:
+            if n.item.abstract or n.item.kind != "paper":
+                continue
+            got = fill_abstract(n.item, http, self.oa if (self.oa and self.cfg.use_openalex) else None)
+            log.info("abstract for %s: %s", n.item.title[:70], f"from {got}" if got else "none found")
+
+    def _seed_text(self, item, what: str = "seed") -> str:
+        """The seed's full text (papers folder, arXiv, open-access PDF), so its card and the problems it opens come
+        from the paper rather than its abstract. "" when none was found, with a note saying how to supply it. A
+        must-read paper is read the same way (`what` names it in the log)."""
+        from tastecal.sources.fulltext import card_excerpt, find_fulltext, suggested_name
+        node = {"id": item.id, "title": item.title, "url": item.url}
+        try:
+            text, basis, where = find_fulltext(node, item, getattr(self.src, "http", None), self.cfg.papers_dir)
+        except Exception as e:  # offline, blocked
+            log.info("%s full text: %s", what, e)
+            text, basis, where = "", "abstract", ""
+        if basis == "full text":
+            log.info("%s: read from the full text (%s)", what, where)
+            return card_excerpt(text)
+        log.warning("%s: no full text found, so its card and the problems it opens come from the abstract only. "
+                    "Put its PDF in the %s folder as %s and start the run again.", what, self.cfg.papers_dir or "papers",
+                    suggested_name(node, item))
+        return ""
+
+    def _make_cards(self, nodes: List[Node], texts: Optional[Dict[str, str]] = None) -> None:
         todo = [n for n in nodes if n.card is None]
+        self._fill_abstracts(todo)
         for batch in chunks(todo, CARD_BATCH):
-            rows = self.llm.json(prompts.SYSTEM, prompts.cards([n.item for n in batch], self.mentions))
+            rows = self.llm.json(prompts.SYSTEM, prompts.cards([n.item for n in batch], self.mentions, texts))
             got = {r.get("id"): r for r in rows if isinstance(r, dict)} if isinstance(rows, list) else {}
             for n in batch:
                 r = got.get(n.item.id) or {}
                 n.card = Card(
                     short=(r.get("short") or n.item.title.split(":")[0])[:40],
                     inherits=r.get("inherits", ""), move=r.get("move", ""), insight=r.get("insight", ""),
-                    leaves=[x for x in (r.get("leaves") or []) if isinstance(x, str)][:3],
+                    leaves=real_leaves(r.get("leaves"))[:3],
                     summary=r.get("summary", ""), date_guess=r.get("date_guess", "") or "")
                 if not n.item.date and n.card.date_guess:
                     n.item.date = n.card.date_guess[:7]
@@ -178,7 +234,7 @@ class Grower:
                         if not p.addressed_by:
                             addressed += 1
                         p.addressed_by.append(n.item.id)
-                leaves = r.get("leaves") or [{"new": t} for t in (n.card.leaves if n.card else [])]
+                leaves = [] if n.borrowed else (r.get("leaves") or [{"new": t} for t in (n.card.leaves if n.card else [])])
                 for lv in leaves:
                     if not isinstance(lv, dict):
                         continue
@@ -186,6 +242,8 @@ class Grower:
                         p = self.ledger.get(lv["same_as"])
                         if n.item.id not in p.raised_by and n.item.id not in p.addressed_by:
                             p.raised_by.append(n.item.id)
+                    elif lv.get("new") and not real_leaves([lv["new"]]):
+                        continue           # says the text was thin, not what the work leaves open
                     elif lv.get("new"):
                         twin = self.ledger.similar(lv["new"], self.LEX_SAME)
                         if twin:
@@ -214,7 +272,7 @@ class Grower:
                 seen.add(k)
                 todo.append(it)
         for batch in chunks(todo, SCOPE_BATCH):
-            rows = self.llm.json(prompts.SYSTEM, prompts.scope_check(self.cfg.scope, batch))
+            rows = self.llm.json(prompts.SYSTEM, prompts.scope_check(self.field, batch))
             got = {r.get("id"): r for r in rows if isinstance(r, dict)} if isinstance(rows, list) else {}
             for it in batch:
                 r = got.get(it.id) or {}
@@ -284,16 +342,19 @@ class Grower:
             p.searched = True
         seed = self.nodes[self.seed_id]
         hint = f"{seed.item.title}. Key idea: {seed.card.insight if seed.card else ''}"
-        if self.cfg.scope:
-            hint += f" Stay within this field: {self.cfg.scope}."
-        qmap = self.llm.json(prompts.SYSTEM, prompts.problem_queries(picked, hint, names))
+        if self.field:
+            hint += f" Stay within this field: {self.field}."
+        qmap = self.llm.json(prompts.SYSTEM, prompts.problem_queries(picked, hint, names), note=False)
         qmap = qmap if isinstance(qmap, dict) else {}
         results = []
         for p in picked:
             raiser = next((self.nodes[r] for r in p.raised_by if r in self.nodes), None)
             year_from = raiser.item.year if raiser else None
             found, seen = [], set()
-            for q in (qmap.get(p.id) or [p.text])[:2]:
+            queries = search_queries(qmap.get(p.id)) or search_queries([p.text])
+            if not queries:
+                log.info("no English search query for problem %s; skipped", p.id)
+            for q in queries[:2]:
                 hits = self.src.search(q, year_from, limit=12)
                 self._saw(hits)
                 for it in hits:
@@ -349,15 +410,27 @@ class Grower:
         self._add_node(seed)
         self.seed_id = seed_item.id
         log.info("seed: %s (%s)", seed_item.title, seed_item.year)
-        self._make_cards([seed])
+        seed_text = self._seed_text(seed_item)
+        self._make_cards([seed], {seed_item.id: seed_text} if seed_text else None)
         if seed.card and seed.card.inherits:
             p = self.ledger.add(seed.card.inherits)
             p.addressed_by.append(seed.item.id)
         for lv in (seed.card.leaves if seed.card else []):
             self.ledger.add(lv, raised_by=seed.item.id)
-        self.rounds.append({"round": 0, "expanded": [], "found": 1, "kept": 1,
-                            "new_problems": len(seed.card.leaves) if seed.card else 0, "addressed": 0,
-                            "note": "Read the seed; open its limitations"})
+        if not cfg.scope:
+            try:
+                got = self.llm.json(prompts.SYSTEM, prompts.home_field(seed_item, seed.card))
+                self.home = " ".join(str((got or {}).get("field") or "").split())[:80] if isinstance(got, dict) else ""
+            except Exception as e:  # the map still grows, only without the field check
+                log.info("could not name the seed's field: %s", e)
+            if self.home:
+                log.info("seed's field: %s (works from other fields join only as borrowed tools)", self.home)
+        must, opened = self._add_must()
+        self.rounds.append({"round": 0, "expanded": [], "found": 1 + len(must), "kept": 1 + len(must),
+                            "new_problems": (len(seed.card.leaves) if seed.card else 0) + opened, "addressed": 0,
+                            **({"must": [n.item.id for n in must]} if must else {}),
+                            "note": (f"Read the seed and {len(must)} must-read paper{'s' if len(must) > 1 else ''}; "
+                                     "open their limitations") if must else "Read the seed; open its limitations"})
 
         quiet = 0
         for rnd in range(1, cfg.max_rounds + 1):
@@ -415,7 +488,7 @@ class Grower:
         """Runners-up: proposals that were judged relevant but did not fit the budget.
         Returns (anchor node, candidate, classifier row), most relevant first, popularity ignored."""
         rows = [(a, c, r) for a, c, r in self.backlog.values() if not self._known(c.item)]
-        if self.cfg.scope:
+        if self.field:
             self._scope_filter([c.item for _, c, _ in rows])
             rows = [x for x in rows if not self._outside(x[1].item)]
         rows.sort(key=lambda x: -float(x[2].get("strength") or 0.5) * RELATION_WEIGHT.get(x[2].get("type"), 0.3))
@@ -425,11 +498,39 @@ class Grower:
         nid = self._known(c.item)
         return bool(nid) and ((nid, anchor.item.id) in self.edges or (anchor.item.id, nid) in self.edges)
 
+    def _add_must(self) -> Tuple[List[Node], int]:
+        """The papers you named as must-read: found, read in full like the seed, and put on the map with it (the
+        field limit does not apply to them). Their limitations open problems, and the first round opens them with
+        the seed. One that cannot be found is logged and listed in the report. Returns them and how many problems
+        they opened."""
+        added: List[Node] = []
+        self.must_missing = []
+        for ref in self.cfg.must or ():
+            try:
+                item = self.src.resolve(ref)
+            except Exception as e:  # not found, offline
+                log.warning("must-read paper not found: %s (%s)", ref, e)
+                self.must_missing.append(ref)
+                continue
+            known = self._known(item)
+            if known:
+                if known != self.seed_id:
+                    self.nodes[known].must = True
+                continue
+            node = Node(item=item, card=None, hop=0, direction="must", round=0, score=9.0, must=True)
+            self._add_node(node)
+            text = self._seed_text(item, f"must-read {item.title[:60]}")
+            self._make_cards([node], {item.id: text} if text else None)
+            added.append(node)
+            log.info("must-read: %s (%s)", item.title, item.year)
+        opened = self._update_ledger(added)[0] if added else 0
+        return added, opened
+
     def _pick_frontier(self, rnd: int) -> List[Node]:
-        if rnd == 1:
-            return [self.nodes[self.seed_id]]
+        if rnd == 1:      # the seed, and the papers you named as must-read
+            return [self.nodes[self.seed_id]] + [n for n in self.nodes.values() if n.must and n.item.id != self.seed_id]
         pool = [n for n in self.nodes.values() if n.item.id not in self.expanded
-                and n.item.kind == "paper"
+                and n.item.kind == "paper" and not n.borrowed
                 and (-self.cfg.max_back_hops < n.hop < self.cfg.max_forward_hops)]
         pool.sort(key=lambda n: -n.score)
         return pool[: self.cfg.expand_per_round]
@@ -462,13 +563,20 @@ class Grower:
         cap = max(3, math.ceil(room * (0.6 if rnd == 1 else 0.5)))
         added: List[Node] = []
         blogs = sum(1 for n in self.nodes.values() if n.item.kind != "paper")
+        n_borrowed = sum(1 for n in self.nodes.values() if n.borrowed)
         for i, (s, anchor, c, r) in enumerate(ranked):
-            if self.cfg.scope and len(added) < min(room, cap):
+            borrowed = False
+            if self.field and len(added) < min(room, cap):
                 if norm_title(c.item.title) not in self._scope:
                     self._scope_filter([x[2].item for x in ranked[i:i + SCOPE_BATCH]])
                 if self._outside(c.item):
-                    self._borrow(anchor, c, r)          # listed, not mapped: no node, no budget, never expanded
-                    continue
+                    # With --scope: listed, not mapped. Without it: a borrowed tool may join, one hop from an
+                    # in-field work and within its share of the budget; otherwise it is listed too.
+                    if (self.cfg.scope or anchor.borrowed
+                            or n_borrowed >= max(1, int(self.cfg.budget * self.BORROWED_SHARE))):
+                        self._borrow(anchor, c, r)      # no node, no budget, never expanded
+                        continue
+                    borrowed = True
             if len(added) >= min(room, cap):
                 self.backlog[norm_title(c.item.title)] = (anchor, c, r)
                 continue
@@ -477,7 +585,8 @@ class Grower:
                     continue
                 blogs += 1
             hop = anchor.hop - 1 if c.direction == "backward" else anchor.hop + 1
-            node = Node(item=c.item, card=None, hop=hop, direction=c.direction, round=rnd, score=s)
+            node = Node(item=c.item, card=None, hop=hop, direction=c.direction, round=rnd, score=s, borrowed=borrowed)
+            n_borrowed += borrowed
             self._add_node(node)
             self._add_edge(self._edge(anchor, node, c.direction, r), float(r.get("strength") or 0.5))
             if c.problem_id and self.ledger.get(c.problem_id):

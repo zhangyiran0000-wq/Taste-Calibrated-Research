@@ -4,10 +4,11 @@ are found even when a paper has tens of thousands of citers."""
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from tastecal.core.http import Http, HttpError
-from tastecal.core.model import Item, title_similarity
+from tastecal.core.model import Item, junk_title, title_similarity
 
 log = logging.getLogger("tastecal.openalex")
 
@@ -27,7 +28,7 @@ def rebuild_abstract(inv: Optional[Dict[str, List[int]]]) -> str:
 
 
 def to_item(w: Dict[str, Any]) -> Optional[Item]:
-    if not w or not w.get("display_name"):
+    if not w or not w.get("display_name") or junk_title(w["display_name"]):
         return None
     doi = (w.get("doi") or "").replace("https://doi.org/", "")
     ids = {"openalex": w["id"].rsplit("/", 1)[-1]}
@@ -58,23 +59,22 @@ class OpenAlex:
         self.mailto = mailto or None
 
     def find(self, item: Item) -> Optional[str]:
-        """Best OpenAlex work id for an item: title search, most-cited match wins
-        (preprint and published versions are often split into separate records)."""
+        """Best OpenAlex work id for an item: a title search ranked by relevance, then, among the results whose title
+        matches, the most cited (preprint and published versions are often split into separate records). Ranking the
+        search itself by citations would fill the first page with famous works that only share a word or two."""
         try:
-            data = self.http.get_json(BASE + "/works", params={
-                "search": item.title, "per-page": 8, "sort": "cited_by_count:desc",
+            data = self.http.get_json(BASE + "/works", params={       # ? and * are wildcards there: a title with them is refused
+                "search": " ".join(re.sub(r"[?*]", " ", item.title).split()), "per-page": 10,
                 "select": "id,display_name,publication_year,cited_by_count", "mailto": self.mailto})
         except HttpError as e:
             log.info("OpenAlex find failed: %s", e)
             return None
-        best, best_sim = None, 0.0
-        for w in data.get("results") or []:
-            sim = title_similarity(item.title, w.get("display_name", ""))
-            if sim > best_sim:
-                best, best_sim = w, sim
-        if best and best_sim >= 0.8:
-            return best["id"].rsplit("/", 1)[-1]
-        return None
+        same = [(title_similarity(item.title, w.get("display_name", "")), w) for w in data.get("results") or []]
+        same = [(sim, w) for sim, w in same if sim >= 0.8]
+        if not same:
+            return None
+        best = max(same, key=lambda t: ((t[1].get("cited_by_count") or 0), t[0]))[1]
+        return best["id"].rsplit("/", 1)[-1]
 
     def top_citing(self, work_id: str, n: int = 50, from_year: Optional[int] = None) -> List[Item]:
         flt = f"cites:{work_id}"
@@ -100,3 +100,42 @@ class OpenAlex:
             return None
         got = data.get("citation_normalized_percentile") if isinstance(data, dict) else None
         return got if isinstance(got, dict) else None
+
+    def attention(self, work_id: str) -> Optional[dict]:
+        """Counts for the taste fit: {"pct": percentile among works of the same subfield, type and year, "top10",
+        "cited_by", "by_year": {"2025": n, ...}, "pub": "YYYY-MM-DD"}, or None."""
+        try:
+            data = self.http.get_json(f"{BASE}/works/{work_id}", params={
+                "select": "id,citation_normalized_percentile,cited_by_count,counts_by_year,publication_date",
+                "mailto": self.mailto})
+        except HttpError as e:
+            log.info("OpenAlex attention failed: %s", e)
+            return None
+        if not isinstance(data, dict):
+            return None
+        pct = data.get("citation_normalized_percentile") or {}
+        return {"pct": pct.get("value") if isinstance(pct, dict) else None,
+                "top10": bool(pct.get("is_in_top_10_percent")) if isinstance(pct, dict) else False,
+                "cited_by": data.get("cited_by_count"),
+                "by_year": {str(r.get("year")): r.get("cited_by_count", 0) for r in data.get("counts_by_year") or []
+                            if isinstance(r, dict) and r.get("year")},
+                "pub": data.get("publication_date") or ""}
+
+    def abstract(self, item: Item) -> str:
+        """The work's abstract from OpenAlex (by DOI, else by title), or "" when it has none."""
+        doi = (item.ids or {}).get("doi")
+        try:
+            if doi:
+                w = self.http.get_json(f"{BASE}/works/doi:{doi}", params={"select": "id,abstract_inverted_index",
+                                                                          "mailto": self.mailto})
+            else:
+                wid = (item.ids or {}).get("openalex") or self.find(item)
+                if not wid:
+                    return ""
+                w = self.http.get_json(f"{BASE}/works/{wid}", params={"select": "id,abstract_inverted_index",
+                                                                      "mailto": self.mailto})
+        except HttpError as e:
+            log.info("OpenAlex abstract failed for %s: %s", item.title[:60], e)
+            return ""
+        return rebuild_abstract((w or {}).get("abstract_inverted_index")) if isinstance(w, dict) else ""
+

@@ -216,7 +216,7 @@ class FakeLLM(LLM):
     #   seed, a  a reason and gains that repeat          -> solid
     #   b        the headline claim is not what is shown -> not-delivered
     #   c, d     delivered, no reason, one setting       -> incremental
-    #   e        a mechanism, one setting                -> treasure (when attractive)
+    #   e        a mechanism, one setting                -> treasure
     GATES = {
         "seed": ("delivered", "mechanism", "repeats"), "a": ("delivered", "proof", "repeats"),
         "b": ("not", "mechanism", "single"), "c": ("delivered", "none", "single"),
@@ -244,14 +244,6 @@ class FakeLLM(LLM):
                            "code": "released", "code_note": "https://github.com/example/repo", "bogus": "x"},
                 "claims": [{"claim": f"{k} is better", "support": "partial", "evidence": "Table 2"}],
                 "fairness_notes": ["baselines were not re-tuned"]}
-
-    def t_gates_taste(self, p):
-        out = {}
-        for i in self._ids(p, "Works:"):
-            line = next((ln for ln in p.splitlines() if ln.startswith(f"[{i}]")), "")
-            hit = bool(re.search(r"move: (?:s2:)?e does", line))
-            out[i] = {"score": 0.8 if hit else 0.2, "why": "close to the profile" if hit else "not my topic"}
-        return out
 
     def t_polish(self, p):
         out = {}

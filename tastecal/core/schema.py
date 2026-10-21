@@ -132,7 +132,9 @@ def _validate_audit(g: dict, ids: set) -> List[str]:
         if a.get("quadrant") not in QUADRANTS:
             errs.append(f"assessment {nid}: unknown quadrant {a.get('quadrant')}")
         sc = (a.get("contribution") or {}).get("score")
-        if not isinstance(sc, (int, float)) or not 0 <= sc <= 1:
+        if sc is None and (a.get("contribution") or {}).get("unscored"):
+            pass                       # read from an abstract or less: no blind score
+        elif not isinstance(sc, (int, float)) or not 0 <= sc <= 1:
             errs.append(f"assessment {nid}: contribution score must be in [0, 1]")
         pct = (a.get("attention") or {}).get("pct")
         if not isinstance(pct, (int, float)) or not 0 <= pct <= 1:

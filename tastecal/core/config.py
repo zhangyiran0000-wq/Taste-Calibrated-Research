@@ -12,7 +12,7 @@ def from_env(name: str, default: str = "") -> str:
 
 # Keys and e-mail addresses tastecal reads from the environment.
 SECRET_ENV = ("S2_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "TAVILY_API_KEY", "BRAVE_API_KEY",
-              "GITHUB_TOKEN", "OPENALEX_MAILTO", "UNPAYWALL_EMAIL")
+              "GITHUB_TOKEN", "OPENALEX_MAILTO", "OPENALEX_API_KEY", "UNPAYWALL_EMAIL")
 _QUOTES = set("\"'`“”‘’„‟‚‛«»‹›「」『』〝〞＂＇")
 
 
@@ -36,8 +36,31 @@ def clean_env(environ=None) -> list:
     return changed
 
 
+def env_value(name: str) -> str:
+    """An environment variable. On Windows, when the process does not have it, the value saved with `setx` (the
+    user's, then the computer's, in the registry): a window opened before `setx`, or a tab of a terminal or editor
+    that was already running, never gets it, though the key is set."""
+    v = os.environ.get(name, "")
+    if v or os.name != "nt":
+        return v
+    try:
+        import winreg
+    except ImportError:
+        return ""
+    for root, path in ((winreg.HKEY_CURRENT_USER, "Environment"),
+                       (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")):
+        try:
+            with winreg.OpenKey(root, path) as k:
+                val, kind = winreg.QueryValueEx(k, name)
+        except OSError:
+            continue
+        if isinstance(val, str) and val.strip():
+            return os.path.expandvars(val) if kind == winreg.REG_EXPAND_SZ else val
+    return ""
+
+
 def _env_secret(name: str):
-    return lambda: clean_secret(os.environ.get(name, ""))
+    return lambda: clean_secret(env_value(name))
 
 
 @dataclass
@@ -58,8 +81,10 @@ class Config:
     max_blogs: int = 5               # web items (blogs, reports) allowed in the graph
     use_openalex: bool = True        # top-cited citers via OpenAlex
     use_web: bool = True             # blog search (needs TAVILY_API_KEY or BRAVE_API_KEY)
-    scope: str = ""                  # field limit, e.g. "autonomous driving": works from other fields (a generic
+    scope: str = ""                  # field limit, a few words naming the field: works from other fields (a generic
                                      # diffusion model, a backbone) are listed as borrowed, not mapped; "" = no limit
+    must: tuple = ()                 # papers you name as must-read: on the map with the seed, whatever the field limit,
+                                     # and opened like the seed; they count towards the budget
     popularity_weight: float = 0.5   # how much citation counts sway which items are admitted and opened;
                                      # lower it (e.g. 0.1) to give little-cited work a fairer chance
 
@@ -74,7 +99,7 @@ class Config:
     gates: bool = True               # run the gates after synthesis and the audit (on by default; --no-gates turns it off)
     gates_max: int = 0               # papers read; 0 = every paper on the map. With a limit: the seed and the most
                                      # connected works (see quality.pick_for_reading)
-    taste_path: str = ""             # taste profile: a file path or a profile name (see taste/profiles.py); only picks treasures.
+    taste_path: str = ""             # taste profile: a file path or a profile name (see taste/profiles.py); used by `fit`, not by the reading.
                                      # run uses ./taste.md if present
     papers_dir: str = "papers"       # your own PDFs or text files, named by id, arXiv id, DOI or title (see sources/fulltext.py)
 
@@ -82,6 +107,7 @@ class Config:
     language: str = "en"             # en | zh-CN: language of every text the reader sees
     polish: bool = True              # rewrite sentences that break the plain-language rules (see report/polish.py)
     outlook: bool = True             # what's next: active now, next steps, shared assumptions
+    backtest: bool = False           # rebuild forces from early works and test their predictions (--backtest); not in the report
 
     # --- LLM ----------------------------------------------------------------
     provider: str = "auto"           # auto | claude-cli | codex-cli | anthropic | openai. auto = the subscription
@@ -108,6 +134,7 @@ class Config:
     openai_api_key: str = field(default_factory=_env_secret("OPENAI_API_KEY"))
     s2_api_key: str = field(default_factory=_env_secret("S2_API_KEY"))
     openalex_mailto: str = field(default_factory=_env_secret("OPENALEX_MAILTO"))
+    openalex_api_key: str = field(default_factory=_env_secret("OPENALEX_API_KEY"))
     tavily_api_key: str = field(default_factory=_env_secret("TAVILY_API_KEY"))
     brave_api_key: str = field(default_factory=_env_secret("BRAVE_API_KEY"))
 

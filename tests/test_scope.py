@@ -58,9 +58,9 @@ class ScopeTest(unittest.TestCase):
         self.assertEqual(graph["meta"]["scope"], "model adaptation")
         self.assertEqual(graph["imports"][0]["used_by"], [graph["meta"]["seed"]])     # re-keyed with the nodes
         html = render_html(graph)
-        self.assertIn("Borrowed from other fields", html)
+        self.assertNotIn("Borrowed from other fields", html)        # kept in graph.json, not shown in the report
         graph["meta"]["language"] = "zh-CN"
-        self.assertIn("借自其他领域", render_html(graph))                                 # every Chinese pair still matches
+        self.assertNotIn("借自其他领域", render_html(graph))        # and every Chinese pair still matches
 
     def test_no_limit_is_unchanged(self):
         g, llm = grow("", llm=FakeLLM())
@@ -106,3 +106,24 @@ class ScopeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HomeFieldLLM(ScopedLLM):
+    """No --scope: the seed's field is inferred, and Beta is a tool from another field."""
+    def t_home_field(self, p):
+        return {"field": "model adaptation"}
+
+
+class BorrowedToolTest(unittest.TestCase):
+    def test_tool_from_another_field_joins_but_does_not_grow(self):
+        g, llm = grow("", llm=HomeFieldLLM())
+        self.assertEqual(g.home, "model adaptation")
+        beta = [n for n in g.nodes.values() if n.item.title == "Beta Adapters"]
+        self.assertEqual(len(beta), 1)                       # kept on the map, one hop from the seed
+        self.assertTrue(beta[0].borrowed)
+        self.assertNotIn(beta[0].item.id, g.expanded)        # never opened
+        self.assertFalse(any(beta[0].item.id in p.raised_by for p in g.ledger.problems.values()))
+        self.assertTrue(all(not n.borrowed for n in g.nodes.values() if n.item.title != "Beta Adapters"))
+        graph = synthesize(g, llm, "seed")
+        self.assertEqual(validate(graph), [])
+        self.assertTrue(any(n.get("borrowed") for n in graph["nodes"]))

@@ -52,6 +52,8 @@ def _rekey(g: Grower) -> Dict[str, str]:
     g.seed_id = mapping[g.seed_id]
     for r in g.rounds:
         r["expanded"] = [mapping.get(x, x) for x in r.get("expanded", [])]
+        if r.get("must"):
+            r["must"] = [mapping.get(x, x) for x in r["must"]]
     for row in getattr(g, "imports", {}).values():
         row["used_by"] = [mapping.get(x, x) for x in row["used_by"]]
     return mapping
@@ -115,16 +117,23 @@ def synthesize(g: Grower, llm: LLM, seed_ref: str) -> dict:
 
     # 4. check ----------------------------------------------------------------
     # The backtest rebuilds forces from early works only and compares with a no-forces baseline (backtest.py).
-    from tastecal.lineage import backtest
+    # Off by default (--backtest): the report no longer shows it, so it would only cost calls.
     field_view = dict(field, driving_forces=forces)
-    check = backtest.run(g, llm, nodes, field_view)
-    # Coverage: does every work on the map fit one of the (full-map) forces?
-    chk = llm.json(prompts.SYSTEM, prompts.misfits(nodes, forces))
-    if isinstance(chk, dict):
-        check["misfits"] = [m for m in chk.get("misfits", []) if isinstance(m, dict) and m.get("id") in ids]
-    misfit_ids = {m["id"] for m in check["misfits"]}
-    fit = sum(1 for n in nodes if n.item.id not in misfit_ids and any(t in owner for t in n.threads))
-    check["coverage"] = {"fit": fit, "total": len(nodes)}
+    check: dict = {}
+    if getattr(g.cfg, "backtest", False):
+        from tastecal.lineage import backtest
+        check = backtest.run(g, llm, nodes, field_view)
+        # Coverage: does every work on the map fit one of the (full-map) forces?
+        chk = llm.json(prompts.SYSTEM, prompts.misfits(nodes, forces))
+        if isinstance(chk, dict):
+            check["misfits"] = [m for m in chk.get("misfits", []) if isinstance(m, dict) and m.get("id") in ids]
+        # Borrowed tools from other fields are not expected to fit this field's forces.
+        own = [n for n in nodes if not getattr(n, "borrowed", False)]
+        own_ids = {n.item.id for n in own}
+        check["misfits"] = [m for m in check["misfits"] if m["id"] in own_ids]
+        misfit_ids = {m["id"] for m in check["misfits"]}
+        fit = sum(1 for n in own if n.item.id not in misfit_ids and any(t in owner for t in n.threads))
+        check["coverage"] = {"fit": fit, "total": len(own)}
 
     # 5. story ------------------------------------------------------------------
     story = llm.json(prompts.SYSTEM, prompts.narrative(field_view, thread_rows, nodes))
@@ -163,6 +172,7 @@ def synthesize(g: Grower, llm: LLM, seed_ref: str) -> dict:
             "external_drivers": [d for d in field.get("external_drivers") or [] if isinstance(d, dict)],
             "knock_on": knock,
             "open_problems": [p for p in field.get("open_problems") or [] if isinstance(p, str)],
+            "keywords": [k.strip() for k in field.get("keywords") or [] if isinstance(k, str) and k.strip()][:8],
         },
         "threads": threads_out,
         "problems": [dict(p, thread=g.ledger.get(p["id"]).thread) for p in g.ledger.as_list()],
@@ -174,8 +184,12 @@ def synthesize(g: Grower, llm: LLM, seed_ref: str) -> dict:
         "check": check,
         "rounds": g.rounds,
     }
-    if g.cfg.scope:     # only with a field limit, so other graphs stay exactly as before
-        out["meta"]["scope"] = g.cfg.scope
+    if g.field:
+        out["meta"]["scope"] = g.field
+        out["meta"]["scope_source"] = "user" if g.cfg.scope else "inferred"
+    if getattr(g, "must_missing", None):          # must-read papers that could not be found
+        out["meta"]["must_missing"] = list(g.must_missing)
+    if g.field or g.imports_list():
         out["imports"] = g.imports_list()
     return out
 
@@ -185,9 +199,10 @@ def node_json(n) -> dict:
     return {
         "id": it.id, "title": it.title, "short": c.short if c else it.title[:30], "kind": it.kind,
         "date": it.date or (str(it.year) if it.year else ""), "year": it.year,
-        "authors": it.author_line(), "venue": it.venue, "url": it.url, "citations": it.citations,
+        "authors": it.author_line(), "venue": it.venue, "url": it.url, "citations": it.citations, "ids": dict(it.ids or {}),
         "role": n.role or "improvement", "threads": n.threads, "hop": n.hop, "direction": n.direction,
-        "round": n.round,
+        "round": n.round, **({"borrowed": True} if getattr(n, "borrowed", False) else {}),
+        **({"must": True} if getattr(n, "must", False) else {}),
         "card": {"inherits": c.inherits, "move": c.move, "insight": c.insight, "leaves": c.leaves,
                  "summary": c.summary} if c else {},
     }

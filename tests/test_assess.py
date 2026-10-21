@@ -104,6 +104,24 @@ class StarsTest(unittest.TestCase):
 
 
 class AuditStageTest(unittest.TestCase):
+    def test_thin_evidence_is_never_flagged(self):
+        cfg = Config(budget=8, max_rounds=3, use_openalex=False, use_web=False, cache_dir=tempfile.mkdtemp(),
+                     assess=True, assess_max=12, assess_pool=3)
+        llm = FakeLLM()
+        g = Grower(cfg, FakeSource(), llm).run("seed")
+        graph = synthesize(g, llm, "seed")
+        targets, pool = targets_from_grower(g, graph)
+        audit(graph, targets, Auditor(cfg, FakeSource(), llm, today=TODAY), pool)   # no full texts: abstracts only
+        flags = {n["assessment"]["flag"] for n in graph["nodes"]}
+        self.assertTrue(flags <= {"thin", "too-early"}, flags)
+        self.assertNotIn("audit_judge", llm.tasks)                   # nothing to review
+        self.assertNotIn("audit_contribution", llm.tasks)            # and no blind score from a summary
+        for n in graph["nodes"]:
+            self.assertIsNone(n["assessment"]["contribution"]["score"])
+            self.assertEqual(n["assessment"]["quadrant"], "unscored")
+        self.assertEqual(validate(graph), [])
+        render_html(graph)                                           # the report still draws
+
     def test_audit_on_fake_corpus(self):
         cfg = Config(budget=8, max_rounds=3, use_openalex=False, use_web=False, cache_dir=tempfile.mkdtemp(),
                      assess=True, assess_max=12, assess_pool=3)
@@ -111,7 +129,9 @@ class AuditStageTest(unittest.TestCase):
         g = Grower(cfg, FakeSource(), llm).run("seed")
         graph = synthesize(g, llm, "seed")
         targets, pool = targets_from_grower(g, graph)
-        audit(graph, targets, Auditor(cfg, FakeSource(), llm, today=TODAY), pool)
+        au = Auditor(cfg, FakeSource(), llm, today=TODAY)
+        au._fulltext = lambda item: ((item.abstract + " ") * 30, "full text")     # as if every paper was found in full
+        audit(graph, targets, au, pool)
         self.assertEqual(validate(graph), [])
 
         by_title = {n["title"]: n for n in graph["nodes"]}

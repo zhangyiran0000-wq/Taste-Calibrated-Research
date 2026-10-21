@@ -38,22 +38,22 @@ from typing import Dict, Iterable, List, Optional
 
 from tastecal.prompts import audit as P
 from tastecal.core.model import Item, norm_title, title_similarity
-from tastecal.taste.calibration import on_your_scale, your_scale
 
 log = logging.getLogger("tastecal.audit")
 
 ALIAS = "[THIS WORK]"
 ROLES = ("builds_on", "contrasts", "baseline", "uses", "mentions", "not_cited")
 SUBSTANTIVE = ("builds_on", "contrasts")
-FLAGS = ("hidden-gem", "overhyped", "skip", "fair", "too-early")
+FLAGS = ("hidden-gem", "overhyped", "skip", "fair", "too-early", "thin")
 LABELS = {
     "hidden-gem": "Possible hidden gem",
     "overhyped": "Possibly overhyped",
     "skip": "Safe to skip",
     "fair": "Fairly valued",
     "too-early": "Too early to tell",
+    "thin": "Too little text to judge",
 }
-QUADRANTS = ("gem", "classic", "hyped", "noise", "middle", "unknown")
+QUADRANTS = ("gem", "classic", "hyped", "noise", "middle", "unknown", "unscored")
 TYPES = ("method", "analysis", "benchmark", "dataset", "tool", "survey", "application", "system")
 VERDICTS = ("substantial", "modest", "negligible")
 ATTENTION = ("under-noticed", "fairly noticed", "well noticed")
@@ -181,13 +181,22 @@ def attention(packs: List[dict], today: str, reference: Optional[List[dict]] = N
 
 
 # ----------------------------------------------------------------------------- blinding
-# Labs and companies: prestige is part of what the blind score must not see.
-ORGS = (r"OpenDriveLab|Thinklab(?:-SJTU)?|hustvl|NVlabs|NVIDIA|Horizon Robotics|Li Auto|Shanghai AI Lab(?:oratory)?|"
-        r"Tsinghua|Waymo|Tesla|Wayve|autonomousvision|T(?:ü|ue)bingen|KargoBot(?:[-_]Research)?|Baidu|Huawei|SenseTime|"
-        r"Meta|Google|DeepMind|Microsoft|OpenAI|Anthropic|Apple|Uber|Motional|Mobileye|Bosch|Toyota|ByteDance|Alibaba|Tencent")
+# Labs, companies and venues: prestige is part of what the blind score must not see. The lists are field-neutral;
+# add the labs and venues of your own field (separated by "|") with TASTECAL_BLIND_ORGS and TASTECAL_BLIND_VENUES.
+def _extra(name: str) -> str:
+    raw = os.environ.get(name, "")
+    parts = [re.escape(p.strip()) for p in raw.split("|") if p.strip()]
+    return ("|" + "|".join(parts)) if parts else ""
+
+
+ORGS = (r"NVlabs|NVIDIA|Meta|Google|DeepMind|Microsoft|OpenAI|Anthropic|Apple|Amazon|IBM|Intel|Samsung|Sony|Huawei|"
+        r"Baidu|ByteDance|Alibaba|Tencent|SenseTime|Shanghai AI Lab(?:oratory)?|Tsinghua|Peking University|Stanford|MIT|"
+        r"Berkeley|CMU|Carnegie Mellon|Oxford|Cambridge|ETH Z(?:ü|ue)rich|T(?:ü|ue)bingen|Max Planck|Mila|Vector Institute"
+        + _extra("TASTECAL_BLIND_ORGS"))
 VENUES = (r"CVPR|ICCV|ECCV|NeurIPS|NIPS|ICLR|ICML|CoRL|ICRA|IROS|IJCAI|AAAI|T-?PAMI|IJCV|RA-?L|WACV|BMVC|"
-          r"ACL|EMNLP|NAACL|KDD|SIGGRAPH|TMLR|JMLR|PNAS|T-?ITS|TSMC|TNNLS|T-?IV|"
-          r"Nature(?: Machine Intelligence| Communications| Human Behaviour)?|Science(?: Robotics)?")
+          r"ACL|EMNLP|NAACL|KDD|SIGGRAPH|TMLR|JMLR|PNAS|TSMC|TNNLS|"
+          r"Nature(?: Machine Intelligence| Communications| Human Behaviour)?|Science(?: Robotics)?"
+          + _extra("TASTECAL_BLIND_VENUES"))
 SCRUB_RULES = [
     (re.compile(r"(https?://)?(www\.)?[\w.-]+\.(org|com|io|net|ai|edu|cn)(/[^\s,;)\]]*)?", re.I), "[link]"),
     (re.compile(r"\b\d{4}\.\d{4,5}(v\d+)?\b"), "[id]"),
@@ -216,7 +225,7 @@ SCRUB_RULES = [
 
 def names_for(pack: dict) -> List[str]:
     """Strings that would identify the work: its short names, title(s), id slug.
-    A pack can set "blind_names" when a nickname is also an ordinary phrase (e.g. "Ego Status")."""
+    A pack can set "blind_names" when a nickname is also an ordinary phrase."""
     if pack.get("blind_names"):
         return sorted(pack["blind_names"], key=len, reverse=True)
     out = []
@@ -297,6 +306,8 @@ def blind_pack(pack: dict, alias: str = ALIAS) -> str:
     if pack.get("fairness_notes"):
         lines += ["", "Fairness notes (how the comparisons were set up)"]
         lines += [f"- {s(x)}" for x in pack["fairness_notes"]]
+    if pack.get("reading_evidence"):
+        lines += ["", "Evaluation validity and reading limits (not a verdict)", s(pack["reading_evidence"])]
     lines += ["", "Earlier work with a similar core idea"]
     precs = pack.get("precedents") or []
     if not precs:
@@ -380,9 +391,11 @@ def candidate(contrib: float, quad: str, months: int, th: Thresholds) -> Optiona
     return None
 
 
-def final_flag(cand: Optional[str], verdict: Optional[dict], months: int, th: Thresholds) -> str:
+def final_flag(cand: Optional[str], verdict: Optional[dict], months: int, th: Thresholds, thin: bool = False) -> str:
     if months < th.too_early_months:
         return "too-early"
+    if thin:
+        return "thin"
     if not cand:
         return "fair"
     v = (verdict or {}).get("verdict")
@@ -402,6 +415,16 @@ def why_line(flag: str, contrib: dict, verdict: Optional[dict]) -> str:
     return re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0] if text else ""
 
 
+def is_thin(pack: dict) -> bool:
+    """Read from an abstract or a summary card only. Such a work gets no blind score: the pack lacks the claims and
+    experiments a score rests on, so any score would say more about the missing text than about the work."""
+    return bool(pack.get("basis")) and pack.get("basis") != "full text"
+
+
+UNSCORED = {"novelty": None, "significance": None, "evidence": None, "uptake": None, "score": None,
+            "type": "method", "rationale": "", "unscored": True}
+
+
 def assess_packs(packs: List[dict], scores: Dict[str, dict], today: str, th: Thresholds,
                  reviews: Optional[Dict[str, dict]] = None, reference: Optional[List[dict]] = None) -> Dict[str, dict]:
     """Combine attention, blind scores and (optional) reviews into one assessment per pack."""
@@ -410,11 +433,12 @@ def assess_packs(packs: List[dict], scores: Dict[str, dict], today: str, th: Thr
     out = {}
     for p in packs:
         pid = p["id"]
-        con = clean_contribution(scores.get(pid))
+        thin = is_thin(p)
+        con = dict(UNSCORED) if thin else clean_contribution(scores.get(pid))
         a = att[pid]
         months = months_between(p.get("date", ""), today)
-        quad = quadrant(con["score"], a["pct"], a["lower_bound"], th)
-        cand = candidate(con["score"], quad, months, th)
+        quad = "unscored" if thin else quadrant(con["score"], a["pct"], a["lower_bound"], th)
+        cand = None if thin else candidate(con["score"], quad, months, th)
         blocked = noticed(p, a, th) if cand == "hidden-gem" else ""
         if blocked:
             cand = None
@@ -422,13 +446,14 @@ def assess_packs(packs: List[dict], scores: Dict[str, dict], today: str, th: Thr
         judged = dict((rev or {}).get("judge") or {})
         if rev and isinstance(rev.get("attention"), dict) and rev["attention"].get("verdict") in ATTENTION:
             judged["under_noticed"] = rev["attention"]["verdict"] == "under-noticed"
-        flag = final_flag(cand, judged or None, months, th)
+        flag = final_flag(cand, judged or None, months, th, thin)
         out[pid] = {
             "attention": a, "contribution": con, "quadrant": quad, "candidate": cand or "",
             "months": months, "review": rev or None, "flag": flag, "label": LABELS[flag],
             "why": why_line(flag, con, (rev or {}).get("judge")),
             **({"gem_blocked": f"Not an unnoticed work: {blocked}."} if blocked else {}),
             "evidence": {k: p.get(k) for k in ("type", "claims", "fairness_notes", "precedents", "uptake",
+                                               "reading_evidence", "eval_fit", "coverage", "verified",
                                                "uptake_counts", "uptake_basis", "later_challenges", "notes",
                                                "citations_note") if p.get(k) not in (None, "", [], {})},
         }
@@ -478,26 +503,28 @@ class Auditor:
                  openalex=None, reader=None):
         self.cfg, self.src, self.llm, self.http = cfg, source, llm, http
         self.oa = openalex
-        # The gates' careful read of one paper (Gatekeeper.gate): papers you rated that are not on the map are read
-        # the same way as the map's papers, from the full text where it can be found.
+        # The gates' careful read of one paper (Gatekeeper.gate): works the gates did not read (the runners-up) are
+        # read the same way as the map's papers, from the full text where it can be found.
         self.reader = reader
         self.today = today or dt.date.today().strftime("%Y-%m")
         self.th = th or Thresholds()
         self.rng = random.Random(7)
 
     # -- evidence ----------------------------------------------------------------
-    def _fulltext(self, item: Item) -> str:
-        """The same search for a full text as the gates use (local file, arXiv, free PDFs), clipped for the prompt."""
-        if not self.http:
-            return item.abstract
+    def _fulltext(self, item: Item) -> tuple:
+        """(text, basis[, coverage]): full-text selection carries its omissions into the claims check."""
         from tastecal.sources.fulltext import find_fulltext
         try:
-            text, _, _ = find_fulltext({"id": item.id, "title": item.title, "url": item.url}, item, self.http,
-                                       getattr(self.cfg, "papers_dir", "papers"), getattr(self.cfg, "openalex_mailto", ""))
-            return (text or item.abstract)[:40000]
+            text, basis, _ = find_fulltext({"id": item.id, "title": item.title, "url": item.url}, item, self.http,
+                                           getattr(self.cfg, "papers_dir", "papers"), getattr(self.cfg, "openalex_mailto", ""))
+            if basis == "full text":
+                from tastecal.sources.fulltext import select_for_reading
+                shown, coverage = select_for_reading(text, 24000)
+                return shown, basis, coverage
+            return (text or item.abstract)[:40000], basis
         except Exception as e:  # offline, blocked
             log.info("no full text for %s: %s", item.title, e)
-            return item.abstract
+            return item.abstract, ("abstract" if item.abstract else "card")
 
     GITHUB_RE = re.compile(r"github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)")
 
@@ -547,10 +574,11 @@ class Auditor:
                            "sentence": cands[k].contexts[0][:300]} for k in order[:8]]
 
     def _precedents(self, item: Item, pack: dict) -> None:
-        mech = self.llm.json(P.AUDIT_SYSTEM, P.mechanism(card_text(pack)))
+        mech = self.llm.json(P.AUDIT_SYSTEM, P.mechanism(card_text(pack)), note=False)
         mech = mech if isinstance(mech, dict) else {}
         found, seen = [], set()
-        for q in (mech.get("queries") or [])[:2]:
+        from tastecal.core.model import search_queries
+        for q in search_queries(mech.get("queries"))[:2]:
             for it in self.src.search(q, None, limit=10, year_to=item.year):
                 k = norm_title(it.title)
                 if k in seen or title_similarity(it.title, item.title) > 0.8 or (it.sort_date or "") >= (item.sort_date or "9999"):
@@ -585,13 +613,34 @@ class Auditor:
                 "citations_lower_bound": item.citations is None, "type": "", "card": card,
                 "claims": [], "fairness_notes": [], "precedents": [], "uptake": [],
                 "later_challenges": list(challenges or []), "notes": ""}
+        if reading is None and self.reader:
+            node = {"id": item.id, "title": item.title, "date": item.sort_date, "url": item.url, "card": card}
+            try:
+                reading = self.reader(node, item)
+            except Exception as e:
+                log.warning("shared reading failed for %s: %s", item.title, e)
+        if reading:
+            from tastecal.judge.gates import evidence_line
+            pack["basis"] = reading.get("basis") or ""
+            pack["reading_evidence"] = evidence_line(reading)
+            for key in ("eval_fit", "coverage", "verified"):
+                if isinstance(reading.get(key), dict):
+                    pack[key] = dict(reading[key])
         if reading and reading.get("claims"):
             pack["claims"] = [c for c in reading["claims"] if isinstance(c, dict)][:4]
             pack["fairness_notes"] = [x for x in reading.get("fairness_notes") or [] if isinstance(x, str)][:5]
             pack["notes"] = f"Claims checked in the shared reading ({reading.get('source') or reading.get('basis', '')})."
         else:
             try:
-                res = self.llm.json(P.AUDIT_SYSTEM, P.claims_check(card_text(pack), self._fulltext(item)))
+                got = self._fulltext(item)
+                text, pack["basis"] = got[:2]
+                if len(got) > 2:
+                    from tastecal.sources.fulltext import coverage_note
+                    pack["coverage"] = got[2]
+                    limits = coverage_note(got[2])
+                    pack["reading_evidence"] = " ".join(filter(None, [pack.get("reading_evidence"), limits]))
+                    text = limits + "\n\n" + text
+                res = self.llm.json(P.AUDIT_SYSTEM, P.claims_check(card_text(pack), text))
                 if isinstance(res, dict):
                     pack["claims"] = [c for c in res.get("claims") or [] if isinstance(c, dict)][:4]
                     pack["fairness_notes"] = [x for x in res.get("fairness_notes") or [] if isinstance(x, str)][:5]
@@ -638,64 +687,14 @@ class Auditor:
                 out["attention"] = {"verdict": chk["verdict"], "why": str(chk.get("why") or "")[:400]}
         return out
 
-    MAX_ANCHORS = 20
-
-    def calibrate(self, anchors: List[dict], packs: List[dict], assessments: Dict[str, dict],
-                  readings: Optional[Dict[str, dict]] = None) -> dict:
-        """Score the papers you rated with the same blind scorer, then fit the blind score to your ratings.
-        A rated paper that is already assessed here reuses its score; any other one is found, given a card, read
-        like the map's papers (full text first) and scored like the rest (about seven model calls each). Each row
-        says what the paper was read from. Your ratings never reach the scorer."""
-        from tastecal.judge.gates import evidence_line
-        readings = readings or {}
-        from tastecal.prompts import lineage as MP
-        by_title = {norm_title(p["title"]): p["id"] for p in packs}
-        rows = []
-        for a in [x for x in anchors if isinstance(x.get("score"), (int, float))][: self.MAX_ANCHORS]:
-            row = {"ref": a["ref"], "yours": round(float(a["score"]), 2), "comment": a.get("comment", "")}
-            try:
-                item = self.src.resolve(a["ref"])
-            except Exception as e:  # not found: listed, not used
-                log.info("rated paper not found: %s (%s)", a["ref"], e)
-                rows.append(dict(row, found=False))
-                continue
-            key = norm_title(item.title)
-            row.update(title=item.title, url=item.url, found=True)
-            if key in by_title and by_title[key] in assessments:
-                nid = by_title[key]
-                row.update(blind=assessments[nid]["contribution"]["score"], on_map=nid)
-                reading = readings.get(nid)
-            else:
-                log.info("audit: scoring your rated paper %s", item.title)
-                got = self.llm.json(MP.SYSTEM, MP.cards([item], {}))
-                r0 = next((r for r in got if isinstance(r, dict) and r.get("id") == item.id), {}) if isinstance(got, list) else {}
-                card = {k: r0.get(k, "") for k in ("inherits", "move", "insight", "leaves", "summary")}
-                reading = None
-                if self.reader:
-                    node = {"id": item.id, "title": item.title, "date": item.sort_date, "url": item.url,
-                            "short": str(r0.get("short") or ""), "card": card}
-                    try:
-                        reading = self.reader(node, item)
-                    except Exception as e:  # offline, blocked
-                        log.info("could not read your rated paper %s: %s", item.title, e)
-                pack = self.gather(item, card, str(r0.get("short") or ""), reading=reading)
-                row.update(blind=self.score(pack)["score"])
-            if reading:
-                row["basis"] = reading.get("basis") or ""
-                if reading.get("source"):
-                    row["source"] = str(reading["source"])[:80]
-                ev = evidence_line(reading)
-                if ev:
-                    row["evidence"] = ev
-            log.info("your rated paper %s: read from %s", item.title,
-                     row.get("basis") or "the claims check (full text when found)")
-            rows.append(row)
-        fit = your_scale([(r["blind"], r["yours"]) for r in rows if "blind" in r])
-        fit["anchors"] = rows
-        return fit
-
     def run(self, packs: List[dict], reference: Optional[List[dict]] = None) -> Dict[str, dict]:
-        scores = {p["id"]: self.score(p) for p in packs}
+        scores = {}
+        for p in packs:
+            if is_thin(p):
+                log.info("audit: %s was read from the %s only, so it gets no blind score", p.get("short") or p.get("title"),
+                         p.get("basis"))
+            else:
+                scores[p["id"]] = self.score(p)
         first = assess_packs(packs, scores, self.today, self.th, reference=reference)
         reviews = {}
         if self.cfg.review:
@@ -741,8 +740,7 @@ def challenges_for(graph: dict, nid: str) -> List[str]:
 
 
 def audit(graph: dict, targets: List[dict], auditor: "Auditor", pool: Optional[List[dict]] = None,
-          readings: Optional[Dict[str, dict]] = None, anchors: Optional[List[dict]] = None,
-          reference: Optional[List[dict]] = None) -> dict:
+          readings: Optional[Dict[str, dict]] = None, reference: Optional[List[dict]] = None) -> dict:
     """targets: [{"item": Item, "card": {...}, "short": str}] with item.id equal to the graph id.
     pool: extra works (same shape plus "near", "reason") shown under "also considered"."""
     packs = []
@@ -752,13 +750,8 @@ def audit(graph: dict, targets: List[dict], auditor: "Auditor", pool: Optional[L
         packs.append(auditor.gather(it, t.get("card") or {}, t.get("short", ""), challenges_for(graph, it.id),
                                     (readings or {}).get(it.id)))
     assessments = auditor.run(packs, reference)
-    calibration = None
-    if anchors:            # papers you rated: show each blind score on your scale too; the blind score stays as is
-        calibration = auditor.calibrate(anchors, packs, assessments, readings)
-        for a in assessments.values():
-            yours = on_your_scale(a["contribution"]["score"], calibration)
-            if yours is not None:
-                a["your_scale"] = yours
+    # Your rated papers are not read here: the taste calibration (`fit`) reads them and measures them on your own
+    # clauses, so a blind score of them would only be a second, different taste score.
     extra = []
     if any(p.get("citations_lower_bound") for p in packs):
         extra.append("Some citation counts were unavailable; those works are marked as lower bounds.")
@@ -774,8 +767,7 @@ def audit(graph: dict, targets: List[dict], auditor: "Auditor", pool: Optional[L
     meta = audit_meta(assessments, auditor.today, auditor.th, extra)
     if reference:
         meta["reference"] = len(reference)
-    if calibration is not None:
-        meta["calibration"] = calibration
+        meta["reference_values"] = reference
     return merge_into_graph(graph, assessments, meta, pool_rows)
 
 
@@ -785,7 +777,7 @@ def targets_from_grower(grower, graph: dict) -> tuple:
     targets = [{"item": n.item, "card": next((x["card"] for x in graph["nodes"] if x["id"] == n.item.id), {}),
                 "short": n.card.short if n.card else ""}
                for n in sorted(grower.nodes.values(), key=lambda n: (n.item.id != grower.seed_id, n.item.sort_date))
-               if n.item.kind == "paper"]
+               if n.item.kind == "paper" and not n.borrowed]
     rows = grower.pool(grower.cfg.assess_pool)
     nodes = [Node(item=c.item, card=None) for _, c, _ in rows]
     grower._make_cards(nodes)

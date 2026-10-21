@@ -55,7 +55,8 @@ def _norm(s: str) -> str:
 
 
 def ids_of(node: dict, item=None) -> dict:
-    ids = dict(getattr(item, "ids", None) or {})
+    ids = dict(node.get("ids") or {})
+    ids.update(getattr(item, "ids", None) or {})
     url = node.get("url") or ""
     if not ids.get("arxiv"):
         m = ARXIV_RE.search(url)
@@ -94,7 +95,8 @@ def open_access_pdfs(http, node: dict, ids: dict) -> List[Tuple[str, str]]:
     """Free PDF links for a work, best first, as (url, where it came from). Fills ids["doi"] when a lookup finds it."""
     found: List[Tuple[str, str]] = []
     if ids.get("s2"):
-        key = os.environ.get("S2_API_KEY", "")
+        from tastecal.core.config import clean_secret, env_value
+        key = clean_secret(env_value("S2_API_KEY"))
         d = _quiet(http, f"https://api.semanticscholar.org/graph/v1/paper/{ids['s2']}",
                    params={"fields": "externalIds,openAccessPdf"}, headers={"x-api-key": key} if key else None) or {}
         pdf = (d.get("openAccessPdf") or {}).get("url") if isinstance(d, dict) else None
@@ -171,8 +173,18 @@ def pdf_to_text(data: bytes) -> str:
     return ""
 
 
+def papers_folder(papers_dir: str = "papers") -> str:
+    """The papers folder: as given, or, for a relative path that is not in the current folder, the same name next to
+    the tastecal package (the project folder), so a run started from another folder still finds your PDFs."""
+    if not papers_dir or os.path.isabs(papers_dir) or os.path.isdir(papers_dir):
+        return papers_dir
+    near = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), papers_dir)
+    return near if os.path.isdir(near) else papers_dir
+
+
 def local_file(node: dict, item=None, papers_dir: str = "papers") -> Optional[str]:
     """Path of a file in the papers folder that belongs to this work."""
+    papers_dir = papers_folder(papers_dir)
     if not papers_dir or not os.path.isdir(papers_dir):
         return None
     ids = ids_of(node, item)
@@ -194,6 +206,124 @@ def local_file(node: dict, item=None, papers_dir: str = "papers") -> Optional[st
     return None
 
 
+def suggested_name(node: dict, item=None) -> str:
+    """A file name `local_file` will match for this work: the DOI with / as _, else the arXiv id, else the start
+    of the title."""
+    ids = ids_of(node, item)
+    if ids.get("doi"):
+        return ids["doi"].replace("/", "_") + ".pdf"
+    if ids.get("arxiv"):
+        return ids["arxiv"] + ".pdf"
+    words = re.sub(r"[^\w\s-]", "", node.get("title") or getattr(item, "title", "") or "").split()[:6]
+    return (" ".join(words) or node.get("id") or "paper") + ".pdf"
+
+
+END_HEADS = re.compile(r"\n\s*(?:\d+(?:\.\d+)*\.?\s*|[IVX]+\.\s*)?(conclusions?|limitations?|discussion|future work)\b[^\n.]{0,40}\n",
+                       re.I)
+REFS = re.compile(r"\n\s*(?:references|bibliography|appendix\b[^\n]{0,60}|acknowledge?ments?)\s*\n", re.I)
+
+
+READ_LIMIT = 64000
+REFS_ONLY = re.compile(r"\n\s*(?:\d+\.?\s*)?(?:references|bibliography|参考文献)\s*\n", re.I)
+APPENDIX_HEAD = re.compile(r"\n\s*(?:appendix\b[^\n]{0,60}|appendices|supplementary(?: material)?\b[^\n]{0,40})\s*\n", re.I)
+RELATED_HEAD = re.compile(r"\n\s*(?:\d+(?:\.\d+)*\.?\s*|[IVX]+\.\s*)?(?:related works?|background|literature review|prior work)\b[^\n]{0,40}\n",
+                          re.I)
+# A numbered reference list: "[1] ..." followed within a few lines by "[2] ..." (one in-text "[1]" at the start
+# of a wrapped line is not enough).
+REF_LIST = re.compile(r"\n\s*\[1\]\s[^\n]*\n(?:[^\n]*\n){0,6}?\s*\[2\]\s")
+NUMBERED_HEAD = re.compile(r"\n\s*(?:\d+\.?|[IVX]+\.)\s+[A-Z][^\n]{2,70}\n")
+
+
+def select_for_reading(text: str, limit: int = READ_LIMIT) -> Tuple[str, dict]:
+    """The part of a paper's full text a reader gets, and how much of the main text it covers.
+
+    A plain cut at `limit` characters loses the experiments and results, which come last. Instead: the reference list
+    is dropped; if the main text is well over the limit, the related-work section goes, then the middle (the start, with
+    the abstract, introduction and method, and the end, with the experiments, results and conclusion, are kept); the
+    appendix is added back while room is left. Omitted parts are marked in the text so the reader knows they exist.
+
+    coverage: {"chars": all characters, "main_chars": the main text before references and appendix,
+               "main_coverage": share of the main text read (0-1), "omitted": [what was left out]}."""
+    text = text or ""
+    omitted: List[str] = []
+    # The last reference heading in the back three quarters (a heading named "References" can also open the paper's
+    # own discussion of related work, but the list itself comes late).
+    refs = next(reversed([m for m in REFS_ONLY.finditer(text) if m.start() > len(text) * 0.25]), None)
+    if refs is None:
+        # No heading found (PDF text often loses it): a numbered reference list starting in the back half.
+        refs = REF_LIST.search(text, int(len(text) * 0.25))
+    if refs:
+        main, rest = text[:refs.start()], text[refs.end():]
+        app = APPENDIX_HEAD.search(rest)
+        appendix = rest[app.start():] if app else ""
+        omitted.append("references")
+    else:
+        app = APPENDIX_HEAD.search(text, int(len(text) * 0.5))
+        main, appendix = (text[:app.start()], text[app.start():]) if app else (text, "")
+    main_len = len(main)
+    lost = 0
+    body = main
+    # A small overflow costs only a slice of the middle; a large one first drops the related-work section.
+    if len(body) > limit * 1.15:
+        m = RELATED_HEAD.search(body)
+        if m and m.start() < len(body) * 0.5:
+            nxt = NUMBERED_HEAD.search(body, m.end() + 200)
+            if nxt and nxt.start() - m.start() < len(body) * 0.35:
+                lost += nxt.start() - m.start()
+                body = body[:m.start()] + "\n[... related-work section omitted ...]\n" + body[nxt.start():]
+                omitted.append("related work")
+    if len(body) > limit:
+        head = int(limit * 0.35)
+        tail = limit - head
+        cut = len(body) - head - tail
+        lost += cut
+        body = body[:head] + f"\n[... {cut} characters from the middle omitted ...]\n" + body[-tail:]
+        omitted.append("middle of the main text")
+    if appendix:
+        room = limit - len(body)
+        if room > 2000:
+            body += "\n\n[Appendix]\n" + appendix[:room]
+            if len(appendix) > room:
+                omitted.append("part of the appendix")
+        else:
+            omitted.append("appendix")
+    cov = round(1 - lost / main_len, 2) if main_len else 1.0
+    return body, {"chars": len(text), "main_chars": main_len, "main_coverage": cov, "omitted": omitted}
+
+
+def coverage_note(cov: Optional[dict]) -> str:
+    """One line for the prompt: what part of the paper the reader sees."""
+    if not cov:
+        return ""
+    pct = int(round(100 * cov.get("main_coverage", 1.0)))
+    left = ", ".join(cov.get("omitted") or []) or "nothing"
+    return (f"You see {pct}% of the main text. Left out: {left}. Do not report something as missing or untested if it "
+            f"may sit in a part that was left out; say it was not in the text you have.")
+
+
+def card_excerpt(text: str, head: int = 4500, tail: int = 2800) -> str:
+    """Abstract and introduction, plus the limitations and conclusion sections: enough for a card and its open
+    problems, without the whole paper. The appendix and references are left out."""
+    text = text or ""
+    refs = REFS.search(text, len(text) // 2)
+    body = text[:refs.start()] if refs else text
+    if len(body) <= head + tail:
+        return body
+    heads = [m for m in END_HEADS.finditer(body) if m.start() > head]
+    if not heads:
+        return body[:head] + "\n[...]\n" + body[-tail:]
+    lim = next((m for m in heads if m.group(1).lower().startswith(("limitation", "future"))), None)
+    con = [m for m in heads if m.group(1).lower().startswith(("conclusion", "discussion"))]
+    con = con[-1] if con else None
+    parts = []
+    if lim and con and lim.start() < con.start():
+        parts = [body[lim.start():con.start()][:tail // 2], body[con.start():][:tail // 2]]
+    else:
+        m = lim or con
+        parts = [body[m.start():][:tail]]
+    return body[:head] + "".join("\n[...]\n" + x for x in parts)
+
+
 def read_file(path: str) -> str:
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pdf":
@@ -203,7 +333,7 @@ def read_file(path: str) -> str:
         raw = f.read()
     if ext in (".html", ".htm"):
         from tastecal.sources.web import html_to_text
-        return html_to_text(raw, max_chars=200000)[2]
+        return html_to_text(raw, max_chars=None)[2]
     return raw
 
 
@@ -235,7 +365,7 @@ def find_fulltext(node: dict, item=None, http=None, papers_dir: str = "papers", 
         from tastecal.sources.web import html_to_text
         aid = ids["arxiv"]
         try:
-            text = html_to_text(http.get_text(f"https://arxiv.org/html/{aid}"), max_chars=120000)[2]
+            text = html_to_text(http.get_text(f"https://arxiv.org/html/{aid}"), max_chars=None)[2]
             if text and len(text) >= min_chars:
                 return text, "full text", "arXiv HTML"
         except Exception as e:
@@ -266,7 +396,7 @@ def find_fulltext(node: dict, item=None, http=None, papers_dir: str = "papers", 
                     return text, "full text", "open-access copy (Unpaywall)"
             if loc.get("url_for_landing_page"):
                 from tastecal.sources.web import html_to_text
-                text = html_to_text(http.get_text(loc["url_for_landing_page"]), max_chars=120000)[2]
+                text = html_to_text(http.get_text(loc["url_for_landing_page"]), max_chars=None)[2]
                 if len(text) >= min_chars:
                     return text, "full text", "open-access copy (Unpaywall)"
         except Exception as e:
@@ -277,3 +407,53 @@ def find_fulltext(node: dict, item=None, http=None, papers_dir: str = "papers", 
     c = node.get("card") or {}
     card = f"Starts from: {c.get('inherits', '')}\nMove: {c.get('move', '')}\nInsight: {c.get('insight', '')}"
     return card, "card", "summary card only"
+
+
+META_ABSTRACT = re.compile(
+    r'<meta\s+[^>]*?(?:name|property)\s*=\s*["\'](citation_abstract|dc\.description|dcterms\.abstract|'
+    r'og:description|twitter:description|description)["\'][^>]*?content\s*=\s*["\']([^"\']{80,})["\']', re.I | re.S)
+META_ABSTRACT_REV = re.compile(
+    r'<meta\s+[^>]*?content\s*=\s*["\']([^"\']{80,})["\'][^>]*?(?:name|property)\s*=\s*["\'](citation_abstract|'
+    r'dc\.description|dcterms\.abstract|og:description|twitter:description|description)["\']', re.I | re.S)
+META_RANK = {"citation_abstract": 0, "dcterms.abstract": 1, "dc.description": 2, "og:description": 3,
+             "twitter:description": 4, "description": 5}
+
+
+def page_abstract(http, url: str) -> str:
+    """The abstract a publisher's landing page declares in its meta tags (citation_abstract, Dublin Core, Open Graph).
+    Many pages that hide the full text still carry the abstract there. "" when none is found or the page is blocked."""
+    import html as _html
+    if not (http and url):
+        return ""
+    try:
+        page = http.get_text(url, max_bytes=600_000)
+    except Exception as e:  # blocked, offline
+        log.info("no landing page for %s: %s", url[:100], e)
+        return ""
+    found = [(m.group(1).lower(), m.group(2)) for m in META_ABSTRACT.finditer(page or "")]
+    found += [(m.group(2).lower(), m.group(1)) for m in META_ABSTRACT_REV.finditer(page or "")]
+    if not found:
+        return ""
+    found.sort(key=lambda kv: (META_RANK.get(kv[0], 9), -len(kv[1])))
+    text = re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", " ", found[0][1]))).strip()
+    return text if len(text) >= 200 else ""
+
+
+def fill_abstract(item, http=None, openalex=None) -> str:
+    """Give an item without an abstract one, from OpenAlex and then the publisher's landing page. Sets item.abstract
+    and returns where it came from ("" when nothing was found). Items that already have an abstract are left as is."""
+    if item is None or getattr(item, "abstract", "") or getattr(item, "kind", "paper") != "paper":
+        return ""
+    if openalex is not None:
+        text = openalex.abstract(item)
+        if len(text or "") >= 200:
+            item.abstract = text
+            return "OpenAlex"
+    ids = getattr(item, "ids", {}) or {}
+    for url in ([f"https://doi.org/{ids['doi']}"] if ids.get("doi") else []) + ([item.url] if getattr(item, "url", "") else []):
+        text = page_abstract(http, url)
+        if text:
+            item.abstract = text
+            return "publisher page"
+    return ""
+

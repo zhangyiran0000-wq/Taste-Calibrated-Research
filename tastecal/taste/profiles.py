@@ -1,30 +1,27 @@
-"""Taste profiles: a short Markdown file that says what one reader finds worth reading.
+"""Taste profiles: the papers one reader rated, each with a score and a line on why.
 
-A profile only ranks the reading list. It decides which works with a stated but unverified reason
-are "treasure candidates". The gate questions never see it, so taste cannot change how the evidence
-is judged.
+A run keeps the profile with its map (graph['gates']['taste_profile']) for the taste calibration (`fit`), which
+fits its clauses to these ratings. The reading of the map's papers never sees it.
 
 Where profiles come from, in order:
   1. a path to a file             --taste my_taste.md
   2. a profile in ./taste.json    --taste mine      (your own profiles, kept in one JSON file; the page writes it)
   3. ./profiles/<name>.md         --taste mine      (older Markdown profiles)
-  4. a preset shipped with the tool --taste practitioner | theorist | newcomer
 With no --taste, the default profile in ./taste.json is used, else ./taste.md when it exists.
 
 taste.json:
   {"default": "mine",
-   "profiles": {"mine": {"title": "Mine", "taste": "what I find worth reading, free text",
+   "profiles": {"mine": {"title": "Mine",
                          "papers": [{"ref": "Deep Residual Learning", "score": 0.9, "comment": "one clear idea"}]}}}
-  score is your own rating of a paper's contribution, 0 to 1 (or null).
+  score is your own rating of a paper's contribution, 0 to 1 (or null). Older profiles may also hold "taste" (free
+  text) and "principles"; nothing reads them.
 
-Format (all sections optional):
-  # Name                    the first heading names the profile in the report
-  one line on who this reader is
-  ## Problems I care about
-  ## Ideas I like
-  ## Ideas I usually skip
-  ## Papers I liked          "Title (year): why". Examples steer the scorer more than descriptions do.
-  ## Papers I disliked       patterns work as well as named papers
+Markdown format:
+  # Name                    the first heading names the profile
+  ## Papers I liked          "- Title (my score 0.85): why"
+  ## Papers I disliked
+  ## Papers I noted          papers without a score
+Any other text in the file is ignored.
 """
 from __future__ import annotations
 
@@ -32,13 +29,12 @@ import os
 import re
 from typing import List, Tuple
 
-PRESETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "presets")
 USER_DIR = "profiles"
 STORE = "taste.json"
 
 
-def build_profile(name: str, text: str, papers: List[dict]) -> str:
-    """Markdown the taste scorer reads: free text, then the rated papers as liked / disliked anchors."""
+def build_profile(name: str, papers: List[dict]) -> str:
+    """Markdown for a profile: its name, then the rated papers as liked / disliked / noted lines."""
     liked, disliked, noted = [], [], []
     for p in papers or []:
         ref = " ".join(str(p.get("ref") or "").split())
@@ -49,8 +45,6 @@ def build_profile(name: str, text: str, papers: List[dict]) -> str:
         line = f"- {ref}" + (f" (my score {score:.2f})" if isinstance(score, (int, float)) else "") + (f": {comment}" if comment else "")
         (noted if not isinstance(score, (int, float)) else liked if score >= 0.5 else disliked).append(line)
     out = [f"# {name.strip() or 'This report'}", ""]
-    if (text or "").strip():
-        out += [text.strip(), ""]
     if liked or disliked or noted:
         out += ["Scores are my own rating of a paper's contribution, from 0 (none) to 1 (major).", ""]
     for head, rows in (("## Papers I liked", liked), ("## Papers I disliked", disliked), ("## Papers I noted", noted)):
@@ -84,13 +78,16 @@ def save_store(data: dict, base: str = ".") -> None:
     os.replace(tmp, path)
 
 
-def put_profile(name: str, taste: str, papers: List[dict], base: str = ".", make_default: bool = False) -> str:
-    """Add or replace a profile in taste.json. Returns its key."""
-    key = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "-", name.lower()).strip("-")[:40] or "mine"
+def put_profile(name: str, papers: List[dict], base: str = ".", make_default: bool = False, key: str = "") -> str:
+    """Add or replace a profile in taste.json: its name and rated papers. Returns its key. `key` replaces that
+    profile, whatever its name says."""
+    key = key or profile_key(name)
     data = load_store(base)
-    data["profiles"][key] = {"title": name.strip(), "taste": (taste or "").strip(),
+    import datetime as dt
+    data["profiles"][key] = {"title": name.strip(),
                              "papers": [{"ref": p.get("ref"), "score": p.get("score"), "comment": p.get("comment") or ""}
-                                        for p in papers or [] if p.get("ref")]}
+                                        for p in papers or [] if p.get("ref")],
+                             "saved": dt.datetime.now().isoformat(timespec="minutes")}
     if make_default or not data.get("default"):
         data["default"] = key
     save_store(data, base)
@@ -109,10 +106,9 @@ def find_profile(spec: str) -> str:
     if os.path.isfile(spec):
         return spec
     stem = spec[:-3] if spec.endswith(".md") else spec
-    for d in (USER_DIR, PRESETS_DIR):
-        p = os.path.join(d, stem + ".md")
-        if os.path.isfile(p):
-            return p
+    p = os.path.join(USER_DIR, stem + ".md")
+    if os.path.isfile(p):
+        return p
     names = ", ".join([n for n, _, _ in list_profiles()] + list(load_store().get("profiles", {}))) or "none"
     raise FileNotFoundError(f"no taste profile '{spec}'. Give a file path or one of: {names}")
 
@@ -125,7 +121,7 @@ def load_profile(spec: str) -> Tuple[str, str, str]:
         entry = load_store().get("profiles", {}).get(spec[:-3] if spec.endswith(".md") else spec)
         if isinstance(entry, dict):
             title = entry.get("title") or spec
-            return title, build_profile(title, entry.get("taste") or "", entry.get("papers") or []).strip(), f"{STORE}#{spec}"
+            return title, build_profile(title, entry.get("papers") or []).strip(), f"{STORE}#{spec}"
     path = find_profile(spec)
     with open(path, "r", encoding="utf-8") as f:
         text = f.read().strip()
@@ -140,13 +136,12 @@ def default_spec() -> str:
 
 
 def list_profiles(user_dir: str = USER_DIR) -> List[Tuple[str, str, str]]:
-    """(name to pass to --taste, path, 'yours' | 'preset')."""
+    """Your Markdown profiles in ./profiles: (name to pass to --taste, path, 'yours')."""
     out = []
-    for d, kind in ((user_dir, "yours"), (PRESETS_DIR, "preset")):
-        if os.path.isdir(d):
-            for f in sorted(os.listdir(d)):
-                if f.endswith(".md") and not f.startswith(("_", ".")) and f.lower() != "readme.md":
-                    out.append((f[:-3], os.path.join(d, f), kind))
+    if os.path.isdir(user_dir):
+        for f in sorted(os.listdir(user_dir)):
+            if f.endswith(".md") and not f.startswith(("_", ".")) and f.lower() != "readme.md":
+                out.append((f[:-3], os.path.join(user_dir, f), "yours"))
     return out
 
 
@@ -178,6 +173,20 @@ def profile_key(name: str) -> str:
     return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "-", (name or "").lower()).strip("-")[:40] or "mine"
 
 
+def find_key(name: str, data: dict) -> str:
+    """The taste.json profile a name means: the key itself, the key put_profile makes from it, else the profile with
+    that title. "" when none."""
+    profs = (data or {}).get("profiles") or {}
+    name = (name or "").strip()
+    if not name:
+        return ""
+    for k in (name, profile_key(name)):
+        if k in profs:
+            return k
+    low = name.casefold()
+    return next((k for k, v in profs.items() if isinstance(v, dict) and str(v.get("title") or "").strip().casefold() == low), "")
+
+
 def rated_profile(prefer: str = "", base: str = ".") -> str:
     """Which taste.json profile your ratings go to: `prefer` when it exists, else the default, else "mine"."""
     data = load_store(base)
@@ -192,7 +201,7 @@ def rate_paper(ref: str, score, comment: str = "", profile: str = "", base: str 
     Returns {"profile", "title", "rated", "papers"}. The profile is created (as the default) when there is none."""
     data = load_store(base)
     key = rated_profile(profile, base)
-    prof = data["profiles"].setdefault(key, {"title": "Mine" if key == "mine" else key, "taste": "", "papers": []})
+    prof = data["profiles"].setdefault(key, {"title": "Mine" if key == "mine" else key, "papers": []})
     papers = [p for p in prof.get("papers") or [] if isinstance(p, dict) and p.get("ref")]
     hit = next((p for p in papers if _norm_ref(p["ref"]) == _norm_ref(ref)), None)
     if score is None:
@@ -211,16 +220,3 @@ def rate_paper(ref: str, score, comment: str = "", profile: str = "", base: str 
     save_store(data, base)
     return {"profile": key, "title": prof.get("title") or key, "papers": papers,
             "rated": sum(1 for p in papers if isinstance(p.get("score"), (int, float)))}
-
-
-def drop_rated(profile_text: str, refs) -> str:
-    """The profile without the rated-paper lines for `refs` (to score those papers without their own rating)."""
-    gone = {_norm_ref(r) for r in refs}
-    out = []
-    for line in (profile_text or "").splitlines():
-        m = re.match(r"^-\s+(.+?)(?:\s+\(my score [0-9.]+\))?(?::\s+.*)?$", line.strip())
-        if m and _norm_ref(m.group(1)) in gone:
-            continue
-        out.append(line)
-    return "\n".join(out)
-

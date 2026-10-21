@@ -1,5 +1,5 @@
-"""Report template, v2 data contract: one "Does it hold up?" section, deeper gate checks, the
-"Not verified" badge, the "What's next" section and the taste profile name.
+"""Report template, v2 data contract: no reading-notes section (the notes are what the taste calibration measures
+papers on, and are not shown), the "What's next" section, and the work card's context from the audit.
 
 The static checks always run. The browser checks run the page's script in headless Chromium and
 are skipped when Playwright or a Chromium build is not available.
@@ -106,24 +106,20 @@ def with_v2(graph, zh=False):
 
 # Reader-visible English that the v2 template adds. None of it may survive a zh render.
 NEW_UI = [
-    ">Holds up?<", "<h2>Does it hold up?</h2>", "Each paper was read from its own text: does it deliver its claim",
-    "Notice versus contribution", ">Outlook<", "What's next", "Who is working on what now",
+    "What's next", "Who is working on what now",
     "Active now", "months</span>", "Open questions", "Closest attempts:", "Would settle it:", "Shared assumptions",
-    "If it is wrong:", "Disagreements", "point different ways", "flagged by the audit", '"disagreement"',
-    "Taste profile:", '"Not verified"', "Only the abstract could be read", "Only a short summary could be read",
-    "Numbers match the tables", '"Fair baselines"', "Ablation that removes the new idea", "Says when it fails",
-    '"Not checked"', '"Released"', '"Promised"', '"Unknown"', '"Unclear"', '"no ablation"', '"unfair baselines"',
-    '"numbers differ"', '"no code"', "Text read:", ">Checks<",
+    "If it is wrong:", "<h3>Context</h3>",
+    '"Not read in full"', "Only the abstract could be read", "Only a short summary could be read",
 ]
 # The same strings as they appear on the page once the script has run (English render).
 NEW_VISIBLE = [
-    "Holds up?", "Does it hold up?", "Notice versus contribution", "What's next", "Active now", "Last 12 months",
-    "Open questions", "Closest attempts:", "Would settle it:", "Shared assumptions", "If it is wrong:",
-    "Disagreements", "flagged by the audit", "disagreements", "Taste profile:", "Not verified",
-    "Numbers match the tables", "Fair baselines", "Ablation that removes the new idea", "Says when it fails",
-    "Not checked", "Released", "no ablation", "unfair baselines", "numbers differ", "no code", "Text read:", "Checks",
-    "abstract only", "local file",
+    "What's next", "Active now", "Last 12 months",
+    "Open questions", "Closest attempts:", "Would settle it:", "Shared assumptions", "If it is wrong:", "Context",
 ]
+# What the reading-notes section used to show: none of it is on the page any more.
+GONE = ['<section id="quality"', 'id="toc-quality"', 'id="gates"', 'id="dr-gates"', "<h3>Reading notes</h3>",
+        "What each paper shows", "How well your taste profile predicts you", "Rate these next", "function gBlock",
+        "function renderGates", "function renderQuality", "function checksBlock", "Taste profile:"]
 
 
 def strip_data(page: str) -> str:
@@ -140,23 +136,15 @@ class StaticTest(unittest.TestCase):
         with open(render.TEMPLATE, encoding="utf-8") as f:
             self.tpl = f.read()
 
-    def test_graph_without_new_fields_renders_one_quality_section(self):
+    def test_no_reading_notes_section(self):
         page = render.render_html(BASE)
-        self.assertIn('<section id="quality"', page)
-        self.assertNotIn('<section id="gates"', page)
-        self.assertNotIn('<section id="audit"', page)
-        # the two old parts live inside it, so old #gates / #audit links still land
-        q = page[page.index('<section id="quality"'):]
-        q = q[:q.index("</section>")]
-        self.assertLess(q.index('id="gates"'), q.index('id="audit"'))
-        self.assertLess(q.index('id="q-dis"'), q.index('id="gates"'))
-        self.assertIn('href="#quality" id="toc-quality"', page)
-        self.assertNotIn("toc-gates", page)
-        self.assertNotIn("toc-audit", page)
-        # What's next sits after Check and before the quality section
-        self.assertLess(page.index('<section id="check"'), page.index('<section id="next"'))
-        self.assertLess(page.index('<section id="next"'), page.index('<section id="quality"'))
-        self.assertEqual(embedded(page), BASE)
+        for gone in GONE + ['<section id="gates"', '<section id="audit"', "toc-gates", "toc-audit"]:
+            self.assertNotIn(gone, page)
+        self.assertNotIn('<section id="check"', page)          # the backtest is no longer shown
+        # What's next sits after the story and before the method
+        self.assertLess(page.index('<section id="story"'), page.index('<section id="next"'))
+        self.assertLess(page.index('<section id="next"'), page.index('<section id="method"'))
+        self.assertEqual(embedded(page), BASE)                  # the notes stay in the data, for `fit`
 
     def test_examples_render_in_both_languages(self):
         for name in ("uniad-50", "hugcl-50"):
@@ -165,8 +153,9 @@ class StaticTest(unittest.TestCase):
                 continue
             with open(path, encoding="utf-8") as f:
                 g = json.load(f)
-            page = render.render_html(g)
-            self.assertIn('<section id="quality"', page)
+            for lang in ("en", "zh-CN"):
+                page = render.render_html(dict(g, meta=dict(g.get("meta") or {}, language=lang)))
+                self.assertNotIn('<section id="quality"', page)
 
     def test_fixture_embeds_every_new_field(self):
         g = with_v2(BASE)
@@ -176,9 +165,10 @@ class StaticTest(unittest.TestCase):
         self.assertEqual(data["outlook"], g["outlook"])
         self.assertEqual(data["gates"]["taste_name"], "practitioner")
         for hook in ('id="next"', 'id="nx-active"', 'id="nx-steps"', 'id="nx-assume"', 'id="nx-note"',
-                     'id="q-facts"', 'id="q-dis"', 'id="gt-ck-h"', "function checksBlock", "const nvBadge",
-                     "function renderNext", "function renderQuality"):
+                     "function renderNext", "function auBlock"):
             self.assertIn(hook, page)
+        for gone in GONE:
+            self.assertNotIn(gone, page)
 
     def test_every_new_ui_string_has_a_chinese_pair(self):
         missing_en = [s for s in NEW_UI if s not in self.tpl]
@@ -186,9 +176,8 @@ class StaticTest(unittest.TestCase):
         zh = localize(self.tpl)
         left = [s for s in NEW_UI if s in zh]
         self.assertEqual(left, [])
-        for cn in ("站得住吗", "哪些站得住", "关注度与贡献", "接下来往哪走", "正在进行", "未解的问题", "最接近的尝试：",
-                   "能定论的实验：", "共同的假设", "如果它不成立：", "分歧", "项被审计标记", "品味档案：", "未核实",
-                   "数字与表格一致", "基线公平", "有去掉新想法的消融", "说明了何时失效", "所读文本：", "缺消融", "仅摘要"):
+        for cn in ("接下来往哪走", "正在进行", "未解的问题", "最接近的尝试：", "能定论的实验：", "共同的假设",
+                   "如果它不成立：", "未读全文", "背景"):
             self.assertIn(cn, zh)
 
     def test_zh_fixture_render_has_no_new_english(self):
@@ -197,8 +186,7 @@ class StaticTest(unittest.TestCase):
         left = [s for s in NEW_UI if s in chrome]
         self.assertEqual(left, [])
         # values the script compares against stay as the data writes them
-        for kept in ('"not checked":', '["code", "none",', '["numbers", "mismatch",', 'n.gates.basis !== "full text"'):
-            self.assertIn(kept, chrome)
+        self.assertIn('n.gates.basis !== "full text"', chrome)
 
 
 def _browser():
@@ -256,47 +244,30 @@ class BrowserTest(unittest.TestCase):
     def count(self, page, sel):
         return page.evaluate("(s) => document.querySelectorAll(s).length", sel)
 
-    def test_old_graph_shows_merged_section_only(self):
+    def show(self, page, tab):
+        """Pick a tab of the first part, as a reader does from the bar."""
+        page.evaluate("(t) => document.querySelector(`.line[data-part=logic] [data-tab=${t}]`).click()", tab)
+
+    def open_card(self, page, nid):
+        """Open a work's card from a chip naming it (here, in What's next)."""
+        page.evaluate("(id) => document.querySelector(`.mention[data-node=\"${id}\"]`).click()", nid)
+
+    def test_old_graph_has_no_notes_tab(self):
         p = self.open(BASE, "base")
-        for sel in ("#quality", "#gates", "#audit", "#toc-quality", "#q-facts"):
-            self.assertTrue(self.visible(p, sel), sel)
-        for sel in ("#next", "#toc-next", "#q-dis"):
+        self.assertEqual(self.count(p, "[data-tab=quality]"), 0)
+        self.assertEqual(self.count(p, "#quality, #gates, #gt-all, #q-facts"), 0)
+        for sel in ("#next", "#toc-next", "#audit", "#q-dis"):
             self.assertFalse(self.visible(p, sel), sel)
-        p.evaluate("() => { document.querySelector('#gates details').open = true; }")
-        self.assertFalse(self.visible(p, "#gt-ck-h"))
-        self.assertEqual(self.count(p, "#gt-all tr:first-child td"), 6)
-        facts = self.text(p, "#q-facts span")
-        self.assertIn("4 works gated", facts)
-        self.assertIn("3 flagged by the audit", facts)
-        self.assertNotIn("Taste profile", facts)
-        self.assertNotIn("disagreement", facts)
+        p.evaluate("() => { location.hash = '#logic/quality'; }")          # an old link lands on the first tab
+        p.wait_for_timeout(50)
+        self.assertTrue(self.visible(p, "#mechanism"))
 
     def test_fixture_shows_every_new_block(self):
         p = self.open(with_v2(BASE), "v2")
-        for sel in ("#next", "#toc-next", "#nx-active", "#nx-steps", "#nx-assume", "#nx-note", "#quality",
-                    "#toc-quality", "#q-dis", "#gates", "#audit"):
+        self.assertTrue(self.visible(p, "#toc-next"))
+        self.show(p, "next")
+        for sel in ("#next", "#nx-active", "#nx-steps", "#nx-assume", "#nx-note"):
             self.assertTrue(self.visible(p, sel), sel)
-        # A: facts row and disagreements
-        facts = self.text(p, "#q-facts span")
-        for s in ("4 works gated", "1 folded", "1 treasure candidate", "3 flagged by the audit", "2 disagreements",
-                  "Taste profile: practitioner", "as of Oct 2026"):
-            self.assertIn(s, facts)
-        self.assertEqual(self.count(p, "#q-dis li"), 2)
-        self.assertEqual(self.count(p, "#q-dis li .flag"), 4)  # one verdict pill and one flag pill each
-        self.assertIn("Notice versus contribution", self.text(p, "#audit h3"))
-        # E: taste profile in the treasure block
-        self.assertIn("Taste profile: practitioner.", self.text(p, "#gt-read > p"))
-        # B: table column with the bad checks only
-        p.evaluate("() => { document.querySelector('#gates details').open = true; }")
-        self.assertTrue(self.visible(p, "#gt-ck-h"))
-        self.assertEqual(self.text(p, '#gt-all tr[data-node="b"] .ck-tags .sup'),
-                         "no ablation | unfair baselines | numbers differ | no code")
-        self.assertEqual(self.count(p, '#gt-all tr[data-node="c"] .ck-tags'), 0)
-        # C: Not verified in the reading list and the table, not on full-text works
-        self.assertIn("Not verified", self.text(p, '#gt-read li'))
-        self.assertIn("Not verified", self.text(p, '#gt-all tr[data-node="a"]'))
-        self.assertNotIn("Not verified", self.text(p, '#gt-all tr[data-node="c"]'))
-        # D: what's next
         self.assertEqual(self.count(p, "#nx-active li"), 2)
         self.assertIn("Last 12 months", self.text(p, "#nx-active h3"))
         self.assertIn("Feb 2026", self.text(p, "#nx-active li"))
@@ -307,33 +278,28 @@ class BrowserTest(unittest.TestCase):
         self.assertIn("If it is wrong:", self.text(p, "#nx-assume li"))
         self.assertIn("cannot be predicted", self.text(p, "#nx-note"))
 
-    def test_drawer_shows_checks_and_not_verified(self):
+    def test_card_has_context_but_no_reading_notes(self):
         p = self.open(with_v2(BASE), "v2-drawer")
-        p.evaluate("() => document.querySelector('#gt-all tr[data-node=\"b\"]').click()")
-        self.assertEqual(self.count(p, "#dr-gates ul.ck li"), 5)
-        self.assertEqual(self.count(p, "#dr-gates ul.ck .sup.unsupported"), 5)
-        self.assertIn("Text read: arXiv HTML", self.text(p, "#dr-gates"))
-        p.evaluate("() => document.querySelector('#gt-all tr[data-node=\"c\"]').click()")
-        self.assertEqual(self.count(p, "#dr-gates ul.ck .sup.supported"), 5)
-        self.assertEqual(self.count(p, '#dr-gates a[href="https://example.org/code"]'), 1)
-        p.evaluate("() => document.querySelector('#gt-all tr[data-node=\"a\"]').click()")
-        badge = p.evaluate("() => { const b = document.querySelector('#dr-gates .row1 .sup.partial[title]'); return b && [b.textContent, b.title]; }")
-        self.assertEqual(badge[0], "Not verified")
-        self.assertTrue(badge[1].startswith("Only the abstract could be read"))
-        self.assertIn("Text read: abstract only", self.text(p, "#dr-gates"))
+        self.show(p, "next")
+        for nid in ("a", "b"):
+            self.open_card(p, nid)
+            self.assertTrue(self.visible(p, "#dr-audit"))
+            self.assertIn("Context", self.text(p, "#dr-audit h3"))
+            self.assertEqual(self.count(p, "#dr-gates"), 0)
+            self.assertNotIn("Reading notes", self.text(p, "#drawer"))
+            self.assertNotIn("Close to the profile", self.text(p, "#drawer"))     # an old taste score is not shown
 
     def test_zh_fixture_shows_no_new_english(self):
         p = self.open(with_v2(BASE, zh=True), "v2-zh", width=390)
-        p.evaluate("() => { document.querySelector('#gates details').open = true; }")
-        seen = p.evaluate("""() => [document.querySelector('.toc'), document.getElementById('next'), document.getElementById('quality')]
-          .map((e) => e.innerText).join('\\n')""")
-        for nid in ("a", "b", "c"):
-            p.evaluate("(id) => document.querySelector(`#gt-all tr[data-node=\"${id}\"]`).click()", nid)
-            seen += "\n" + p.evaluate("() => document.getElementById('dr-gates').innerText")
+        self.show(p, "next")
+        seen = p.evaluate("() => [document.querySelector('.navbar'), document.getElementById('next')].map((e) => e.innerText).join('\\n')")
+        for nid in ("a", "b"):
+            self.open_card(p, nid)
+            seen += "\n" + p.evaluate("() => document.getElementById('drawer').innerText")
             seen += "\n" + p.evaluate("() => Array.from(document.querySelectorAll('[title]')).map((e) => e.title).join('\\n')")
         left = [s for s in NEW_VISIBLE if s in seen]
         self.assertEqual(left, [])
-        for cn in ("站得住吗", "接下来往哪走", "近 12 个月", "2 处分歧", "品味档案：实践派", "未核实", "所读文本：仅摘要", "缺消融"):
+        for cn in ("接下来往哪走", "近 12 个月", "背景", "机制"):
             self.assertIn(cn, seen)
         self.assertEqual(p.evaluate("document.documentElement.scrollWidth"), 390)
 

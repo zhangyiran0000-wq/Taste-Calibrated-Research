@@ -22,6 +22,54 @@ class LLMError(RuntimeError):
     pass
 
 
+CALL_TIMEOUT = 900        # seconds one model-CLI call may take before it is ended and tried again
+
+
+def end_tree(proc: "subprocess.Popen") -> None:
+    """End a process and every process it started. On Windows a plain kill ends only the CLI itself: a child it
+    started (Claude Code and Codex run helpers) keeps the output pipe open, and reading it then waits forever."""
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, timeout=30,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        import signal
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)      # the call runs in its own session: its whole group
+        except (OSError, ProcessLookupError):
+            pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+
+
+def run_capped(cmd: List[str], text_in: str, cwd: str, env: dict, timeout: float = 0) -> "subprocess.CompletedProcess":
+    """subprocess.run(cmd, input=text_in, capture_output=True, text=True) with a timeout that cannot hang: when the
+    call runs past `timeout` seconds (CALL_TIMEOUT by default), it and every process it started are ended, the pipes
+    are read for at most 10 more seconds, and subprocess.TimeoutExpired is raised. (subprocess.run on Windows kills
+    only the process it started, then reads its pipes with no time limit, so one stuck call could stop a run for
+    good.) Ctrl+C ends the call's processes too."""
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            encoding="utf-8", errors="replace", cwd=cwd, env=env, start_new_session=(os.name != "nt"))
+    limit = timeout or CALL_TIMEOUT
+    try:
+        out, err = proc.communicate(text_in, timeout=limit)
+    except subprocess.TimeoutExpired:
+        end_tree(proc)
+        try:
+            proc.communicate(timeout=10)
+        except (subprocess.TimeoutExpired, ValueError, OSError):
+            pass
+        raise subprocess.TimeoutExpired(cmd, limit)
+    except BaseException:
+        end_tree(proc)
+        raise
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
 class LLM:
     """Base class. Subclasses implement `_complete(system, prompt, max_tokens)`."""
 
@@ -58,22 +106,29 @@ class LLM:
         name = self.name + (f"|effort={self.effort}" if self.effort else "")
         return hashlib.sha256(f"{name}\n{system}\n---\n{prompt}".encode("utf-8")).hexdigest()[:40]
 
-    def complete(self, system: str, prompt: str, max_tokens: int = 4096) -> str:
-        if self.system_note:
+    def complete(self, system: str, prompt: str, max_tokens: int = 4096, note: bool = True) -> str:
+        """note=False leaves out the system note (report language, plain-language rules): for text no reader sees,
+        such as search queries, which must stay in English whatever the report language."""
+        if self.system_note and note:
             system = system + "\n\n" + self.system_note
         key = self._key(system, prompt)
         path = os.path.join(self.cache_dir, key + ".txt") if self.cache_dir else None
         if path and os.path.exists(path):
-            self.cache_hits += 1
-            with open(path, "r", encoding="utf-8") as f:
-                return f.read()
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    hit = f.read()
+            except OSError:          # another run is replacing it right now: ask again
+                hit = ""
+            if hit.strip():
+                self.cache_hits += 1
+                return hit
         self.calls += 1
         self.input_chars += len(system) + len(prompt)
         out = self._retrying(system, prompt, max_tokens)
         self.output_chars += len(out)
         if path:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(out)
+            from tastecal.core.files import atomic_write
+            atomic_write(path, out)
         return out
 
     # A dropped connection or a computer that slept mid-call is worth waiting out; a run is hours of work.
@@ -149,16 +204,16 @@ class LLM:
         self.limit_waited += took
         log.info("waited %.0f min for the usage limit to reset; trying again", took / 60)
 
-    def json(self, system: str, prompt: str, max_tokens: int = 4096) -> Any:
+    def json(self, system: str, prompt: str, max_tokens: int = 4096, note: bool = True) -> Any:
         """Ask for JSON; on a parse failure, ask once more with the error."""
-        text = self.complete(system, prompt, max_tokens)
+        text = self.complete(system, prompt, max_tokens, note)
         try:
             return extract_json(text)
         except ValueError as e:
             log.warning("JSON parse failed (%s); asking the model to repair it", e)
             repair = (prompt + "\n\nYour previous answer could not be parsed as JSON (" + str(e)
                       + "). Reply again with ONLY the JSON value, no prose, no code fences.")
-            return extract_json(self.complete(system, repair, max_tokens))
+            return extract_json(self.complete(system, repair, max_tokens, note))
 
     def usage(self) -> str:
         cost = f", about ${self.cost_usd:,.2f} at API prices" if self.cost_usd else ""
@@ -489,11 +544,9 @@ class ClaudeCLILLM(LLM):
         while True:
             lean = self.lean
             try:
-                proc = subprocess.run(self._command(system, lean), input=prompt, capture_output=True, text=True,
-                                      encoding="utf-8", errors="replace",
-                                      timeout=900, cwd=self.workdir, env=self._env())
+                proc = run_capped(self._command(system, lean), prompt, self.workdir, self._env())
             except subprocess.TimeoutExpired:
-                raise LLMError("claude -p timed out after 15 minutes")
+                raise LLMError(f"claude -p timed out after {CALL_TIMEOUT // 60} minutes; it was ended")
             err = " ".join((proc.stderr or "").split())
             if lean and proc.returncode != 0 and re.search(unknown, err, re.I):
                 named = [flag for flag in self.extra if flag in err]
@@ -698,11 +751,9 @@ class CodexCLILLM(LLM):
                     cmd += ["-c", f'model_reasoning_effort="{self.effort}"']
                 cmd.append("-")
                 try:
-                    proc = subprocess.run(cmd, input=text, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                                          timeout=900, cwd=work,
-                                          env=self._env())
+                    proc = run_capped(cmd, text, work, self._env())
                 except subprocess.TimeoutExpired:
-                    raise LLMError("codex exec timed out after 15 minutes")
+                    raise LLMError(f"codex exec timed out after {CALL_TIMEOUT // 60} minutes; it was ended")
                 answer = ""
                 if os.path.exists(out):
                     with open(out, "r", encoding="utf-8", errors="replace") as f:

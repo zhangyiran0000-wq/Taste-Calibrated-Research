@@ -41,14 +41,17 @@ Summary:
 {card_text}
 
 Text:
-{clip(text, 14000)}
+{clip(text, 25000)}
 
 1. List the 2-4 main claims the paper makes about its own contribution.
 2. For each, judge whether the paper's OWN experiments support it:
    "supported" (clear, fair evidence), "partial" (small gains, single benchmark, missing ablation for the claimed component,
    unequal baselines), "unsupported" (evidence contradicts or does not test it), or "untested".
-3. List fairness notes a careful reviewer would raise (extra inputs or sensors vs baselines, privileged information such as
-   ego status, different backbones or training data, metric or protocol differences, no variance reported, no closed-loop test).
+3. List fairness notes a careful reviewer would raise (extra inputs or sensors vs baselines, privileged information the
+   baselines did not get, different backbones or training data, metric or protocol differences, no variance reported, no
+   test in the setting the claim is about). For work that tests or attacks another system, what the tester uses by
+   design is part of its threat model: against non-adversarial baselines (lower bounds) it is not unfair; against other
+   test or attack methods, a difference in access is a fairness note.
 
 Return {{"claims": [{{"claim": "...", "support": "...", "evidence": "where and why"}}], "fairness_notes": ["..."]}}"""
 
@@ -59,6 +62,7 @@ def mechanism(card_text: str) -> str:
 
 Describe the core idea of this work as a mechanism in one or two sentences, WITHOUT using its name or acronyms,
 and write 2 keyword search queries that would find EARLIER papers that may already have had the same idea.
+Write every query in English, whatever language the text above is in: the search engines index English titles and abstracts.
 Return {{"mechanism": "...", "queries": ["...", "..."]}}"""
 
 

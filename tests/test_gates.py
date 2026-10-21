@@ -1,4 +1,4 @@
-"""Gates: rules, ledger, folding, and the whole stage on the fictional fake corpus.
+"""Gates: rules, ledger (nothing is folded), and the whole stage on the fictional fake corpus.
 
     python -m unittest discover -s tests
 """
@@ -47,11 +47,11 @@ class RuleTest(unittest.TestCase):
         self.assertEqual(verdict(answer(reason="mechanism", robust="repeats"), QUIET, None, TH), "solid")
         self.assertEqual(verdict(answer(reason="mechanism"), QUIET, None, TH), "treasure")      # no profile: every reasoned, unverified work
         self.assertEqual(verdict(answer(reason="mechanism"), QUIET, 0.8, TH), "treasure")
-        self.assertEqual(verdict(answer(reason="mechanism"), QUIET, 0.3, TH), "solid")          # reasoned but not for this reader
+        self.assertEqual(verdict(answer(reason="mechanism"), QUIET, 0.3, TH), "treasure")       # taste cannot change evidence
         self.assertEqual(verdict(answer(reason="none", robust="repeats"), QUIET, None, TH), "solid")  # robustness without a reason
-        self.assertEqual(verdict(answer(reason="none"), ADOPTED, None, TH), "solid")             # the field adopted it
+        self.assertEqual(verdict(answer(reason="none"), ADOPTED, None, TH), "incremental")       # adoption is not validation
         self.assertEqual(verdict(answer(reason="analogy"), QUIET, 0.9, TH), "incremental")       # an analogy is not a reason
-        self.assertEqual(verdict(answer("partial", "none", "unclear"), QUIET, None, TH), "incremental")
+        self.assertEqual(verdict(answer("partial", "none", "unclear"), QUIET, None, TH), "uncertain")
 
     def test_clean_gates(self):
         self.assertIsNone(clean_gates({"delivery": "maybe", "reason_type": "proof"}))
@@ -85,57 +85,72 @@ def mini_graph():
 
 
 class ApplyTest(unittest.TestCase):
-    def test_fold_rules_and_ledger(self):
+    def test_nothing_folds_and_the_ledger_keeps_every_solution(self):
         g = mini_graph()
         raw = {"s": dict(answer("not", "none"), basis="full text"),        # the seed is never folded
-               "a": dict(answer(reason="none"), basis="abstract"),         # incremental, but only an abstract was read
-               "b": dict(answer("not", "mechanism"), basis="full text"),   # folded, and its problems reopen
+               "a": dict(answer(reason="none"), basis="abstract"),         # only an abstract was read: no verdict
+               "b": dict(answer("not", "mechanism"), basis="full text"),   # not delivered, yet stays on the map
                "c": dict(answer(reason="mechanism", robust="repeats"), basis="full text")}
-        apply_gates(g, raw, {}, TODAY)
+        apply_gates(g, raw, TODAY)
         v = {n["id"]: n["gates"]["verdict"] for n in g["nodes"]}
         fold = {n["id"]: n["gates"]["fold"] for n in g["nodes"]}
-        self.assertEqual(v, {"s": "not-delivered", "a": "incremental", "b": "not-delivered", "c": "solid"})
-        self.assertEqual(fold, {"s": False, "a": False, "b": True, "c": False})
+        self.assertEqual(v, {"s": "not-delivered", "a": "unread", "b": "not-delivered", "c": "solid"})
+        self.assertEqual(fold, {"s": False, "a": False, "b": False, "c": False})
         p = {x["id"]: x for x in g["problems"]}
-        self.assertEqual((p["P1"]["status"], p["P1"]["claimed_by"]), ("claimed", ["b"]))
-        self.assertEqual((p["P2"]["status"], p["P2"]["addressed_by"], p["P2"]["claimed_by"]), ("addressed", ["a"], ["b"]))
+        self.assertEqual((p["P1"]["status"], p["P1"]["addressed_by"], p["P1"]["claimed_by"]), ("addressed", ["b"], []))
+        self.assertEqual((p["P2"]["status"], p["P2"]["addressed_by"], p["P2"]["claimed_by"]), ("addressed", ["a", "b"], []))
         self.assertEqual(p["P3"]["status"], "open")
-        self.assertEqual(g["gates"]["reopened"], 1)
-        self.assertEqual(g["gates"]["folded"], 1)
+        self.assertEqual(g["gates"]["reopened"], 0)
+        self.assertEqual(g["gates"]["folded"], 0)
+        self.assertTrue(all("fold_reason" not in n["gates"] and "fold_blocked" not in n["gates"] for n in g["nodes"]))
 
-        # Re-gating is idempotent, and a work that now delivers gets its problems back.
-        apply_gates(g, {"b": dict(answer(reason="mechanism", robust="repeats"), basis="full text")}, {}, TODAY)
+        # A graph gated before, with solutions moved to "claimed", gets them back on the next gating.
+        p1 = next(x for x in g["problems"] if x["id"] == "P1")
+        p1.update(addressed_by=[], claimed_by=["b"], status="claimed")
+        apply_gates(g, {"b": dict(answer(reason="mechanism", robust="repeats"), basis="full text")}, TODAY)
         p = {x["id"]: x for x in g["problems"]}
         self.assertEqual((p["P1"]["status"], p["P1"]["addressed_by"], p["P1"]["claimed_by"]), ("addressed", ["b"], []))
         self.assertEqual(p["P2"]["addressed_by"], ["a", "b"])
-        self.assertEqual(next(n for n in g["nodes"] if n["id"] == "a")["gates"]["verdict"], "incremental")  # kept from before
+        self.assertEqual(next(n for n in g["nodes"] if n["id"] == "a")["gates"]["verdict"], "unread")  # kept from before
         self.assertEqual(split_ledger(g), 0)
 
-    def test_every_fold_has_a_reason(self):
+    def test_every_work_stays_and_keeps_a_summary(self):
         g = mini_graph()
         bare = dict(answer("not", "none"), delivery_evidence="", basis="full text")           # no pointer to the text
-        vague = dict(answer(reason="none"), robustness_note="none given", basis="full text")  # boilerplate is not evidence
         lever = dict(answer(reason="analogy"), robustness_note="", basis="full text",
                      levers=[{"lever": "metric-trained", "note": "the scorer is trained on the benchmark's own score (Sec. 3.2)"}])
         good = dict(answer("not", "mechanism"), basis="full text")
-        apply_gates(g, {"a": bare, "b": vague, "c": lever, "s": good}, {}, TODAY)
-        x = {n["id"]: n["gates"] for n in g["nodes"]}
-        self.assertFalse(x["a"]["fold"])
-        self.assertIn("without evidence", x["a"]["fold_blocked"])
-        self.assertFalse(x["b"]["fold"])
-        self.assertTrue(x["c"]["fold"])                                    # a located lever is evidence
-        self.assertIn("analogy", x["c"]["fold_reason"]["evidence"][0] + x["c"]["fold_reason"]["evidence"][-1])
-        self.assertIn("A component trained on the metric: the scorer", " ".join(x["c"]["fold_reason"]["evidence"]))
-        self.assertFalse(x["s"]["fold"])
-        self.assertEqual(x["s"]["fold_blocked"], "The seed is never folded.")
-        for n in g["nodes"]:                                               # every fold names its reason
-            if n["gates"]["fold"]:
-                self.assertTrue(n["gates"]["fold_reason"]["summary"] and n["gates"]["fold_reason"]["evidence"])
-        self.assertIn("Claims: a method that improves itself.", x["s"]["fold_reason"]["summary"])
+        apply_gates(g, {"a": bare, "c": lever, "s": good}, TODAY)
+        x = {n["id"]: n["gates"] for n in g["nodes"] if "gates" in n}
+        self.assertFalse(any(v["fold"] for v in x.values()))
+        self.assertIn("Claims: a method that improves itself.", x["s"]["why"])
+        self.assertTrue(all(v["why"] for v in x.values()))
+
+    def test_chinese_report_gets_chinese_reasons(self):
+        g = mini_graph()
+        g.setdefault("meta", {})["language"] = "zh-CN"
+        lever = dict(answer(reason="analogy"), robustness_note="", basis="full text",
+                     levers=[{"lever": "metric-trained", "note": "评分器在基准分数上训练（3.2节）"}])
+        apply_gates(g, {"a": dict(answer(reason="none"), basis="card"), "c": lever,
+                        "s": dict(answer("not", "mechanism"), basis="full text")}, TODAY)
+        x = {n["id"]: n["gates"] for n in g["nodes"] if "gates" in n}
+        self.assertTrue(x["c"]["why"].startswith("兑现了主张"))
+        self.assertIn("摘要卡片", x["a"]["why"])
+        for v in x.values():
+            self.assertNotRegex(v["why"], r"^(It delivers|Claims|Reason|No stated|Delivered)")
+
+    def test_adoption_is_not_a_robustness_explanation(self):
+        from tastecal.judge.gates import why_line
+        react = dict(QUIET, builds_on_share=0.4, robust=True)
+        g = answer(reason="none", robust="unclear")
+        self.assertEqual(verdict(g, react, None, TH), "uncertain")
+        self.assertNotIn("40%", why_line("solid", g, react))
+        self.assertNotIn("40%", why_line("solid", g, react, "zh"))
+        self.assertEqual(why_line("solid", g, ADOPTED), g["robustness_note"])
 
     def test_unusable_answers_leave_nodes_ungated(self):
         g = mini_graph()
-        apply_gates(g, {"a": {"delivery": "?"}}, {}, TODAY)
+        apply_gates(g, {"a": {"delivery": "?"}}, TODAY)
         self.assertNotIn("gates", next(n for n in g["nodes"] if n["id"] == "a"))
         self.assertEqual(g["gates"]["gated"], 0)
 
@@ -157,28 +172,32 @@ class StageTest(unittest.TestCase):
     def verdicts(self, graph):
         return {n["title"]: (n["gates"]["verdict"], n["gates"]["fold"]) for n in graph["nodes"] if n.get("gates")}
 
-    def test_full_text_folds_and_validates(self):
+    def test_full_text_validates_and_nothing_folds(self):
         graph, llm = self.build(full_text=True, profile=PROFILE)
         v = self.verdicts(graph)
         self.assertEqual(v["SeedNet: Cheap Adaptation"], ("solid", False))
         self.assertEqual(v["Alpha: Small Updates Suffice"], ("solid", False))
-        self.assertEqual(v["Beta Adapters"], ("not-delivered", True))
-        self.assertEqual(v["Gamma: Quantized SeedNet"], ("incremental", True))
-        self.assertEqual(v["Delta: Fixing Gamma Error"], ("incremental", True))
+        self.assertEqual(v["Beta Adapters"], ("not-delivered", False))
+        # No reason and one setting: the label says so, but the work stays on the map.
+        self.assertEqual(v["Gamma: Quantized SeedNet"], ("incremental", False))
+        self.assertEqual(v["Delta: Fixing Gamma Error"], ("incremental", False))
         self.assertEqual(v["Epsilon: Rank Allocation"], ("treasure", False))
         self.assertEqual(validate(graph), [])
-        self.assertTrue(graph["gates"]["taste"])
+        self.assertEqual(graph["gates"]["taste_profile"], PROFILE)            # kept for `fit`, not scored here
+        self.assertFalse(any(k in n["gates"] for n in graph["nodes"] if n.get("gates")
+                             for k in ("attractiveness", "taste_why", "treasure_candidate")))
+        self.assertNotIn("taste_check", graph["gates"])
+        self.assertNotIn("rate_next", graph["gates"])
         html = render_html(graph)
-        self.assertIn('id="gates"', html)
-        self.assertIn('"verdict":"treasure"', html)
+        self.assertNotIn('id="gates"', html)                                  # the notes are not shown
+        self.assertNotIn("Treasure candidate", html)
 
-    def test_taste_never_reaches_the_gate_prompt(self):
+    def test_taste_is_never_scored_and_never_reaches_the_gate_prompt(self):
         _, llm = self.build(full_text=True, profile=PROFILE)
         audits = [p for t, p in llm.prompts if t == "gates_audit"]
-        tastes = [p for t, p in llm.prompts if t == "gates_taste"]
-        self.assertTrue(audits and tastes)
+        self.assertTrue(audits)
         self.assertTrue(all("7f3a" not in p for p in audits))
-        self.assertTrue(all("7f3a" in p and "Section 1." not in p for p in tastes))
+        self.assertFalse(any("7f3a" in p for _, p in llm.prompts))          # no prompt sees the profile
 
     def test_without_full_text_nothing_folds(self):
         graph, _ = self.build(full_text=False)
@@ -197,7 +216,7 @@ class StageTest(unittest.TestCase):
             json.dump(graph, f)
         some = [n["id"] for n in graph["nodes"] if n["role"] != "seed"][:2]
         raw = {some[0]: dict(answer("not", "none"), basis="full text"),
-               some[1]: dict(answer(reason="mechanism"), basis="full text", taste={"score": 0.9, "why": "yes"})}
+               some[1]: dict(answer(reason="mechanism"), basis="full text", taste={"score": 0.9, "why": "yes"})}  # ignored
         with open(rpath, "w") as f:
             json.dump(raw, f)
         self.assertEqual(cli.main(["gates", gpath, "--raw", rpath, "--today", TODAY]), 0)
@@ -206,9 +225,9 @@ class StageTest(unittest.TestCase):
         self.assertEqual(validate(out), [])
         by = {n["id"]: n for n in out["nodes"]}
         self.assertEqual(by[some[0]]["gates"]["verdict"], "not-delivered")
-        self.assertTrue(by[some[0]]["gates"]["fold"])
+        self.assertFalse(by[some[0]]["gates"]["fold"])
         self.assertEqual(by[some[1]]["gates"]["verdict"], "treasure")
-        self.assertEqual(by[some[1]]["gates"]["attractiveness"], 0.9)
+        self.assertNotIn("attractiveness", by[some[1]]["gates"])
         self.assertTrue(os.path.exists(os.path.join(d, "report.html")))
 
 

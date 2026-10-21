@@ -3,7 +3,6 @@
   "profiles": {
     "mine": {
       "title": "Mine",
-      "taste": "Problems I care about: ...\nIdeas I like: ...\nIdeas I usually skip: ...",
       "papers": [
         {
           "ref": "Deep Residual Learning for Image Recognition",

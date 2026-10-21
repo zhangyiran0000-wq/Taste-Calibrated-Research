@@ -152,12 +152,8 @@ class QualityTest(unittest.TestCase):
 
 
 class TasteTest(unittest.TestCase):
-    def test_presets_and_paths(self):
-        names = [n for n, _, k in list_profiles() if k == "preset"]
-        for n in ("practitioner", "theorist", "newcomer"):
-            self.assertIn(n, names)
-            name, text, path = load_profile(n)
-            self.assertIn("## Papers I liked", text)
+    def test_profiles_and_paths(self):
+        self.assertEqual([k for _, _, k in list_profiles()], ["yours"] * len(list_profiles()))   # none shipped
         self.assertEqual(load_profile("")[0], "")
         with self.assertRaises(FileNotFoundError):
             load_profile("no-such-profile")
@@ -171,8 +167,8 @@ class TasteTest(unittest.TestCase):
         os.chdir(d)
         try:
             self.assertEqual(default_spec(), "")
-            key = put_profile("My Taste", "Simple ideas.", [{"ref": "ResNet", "score": 0.9, "comment": "clear"},
-                                                            {"ref": "Hype", "score": 0.2, "comment": ""}])
+            key = put_profile("My Taste", [{"ref": "ResNet", "score": 0.9, "comment": "clear"},
+                                           {"ref": "Hype", "score": 0.2, "comment": ""}])
             self.assertEqual((key, default_spec()), ("my-taste", "my-taste"))
             name, text, path = load_profile("my-taste")
             self.assertEqual(name, "My Taste")
@@ -186,7 +182,7 @@ class TasteTest(unittest.TestCase):
         graph, g, llm, cfg = grown_graph()
         raw = {graph["meta"]["seed"]: {"claimed": "c", "delivery": "delivered", "delivered": "d",
                                        "reason_type": "proof", "reason": "r", "robustness": "repeats", "basis": "full text"}}
-        apply_gates(graph, raw, {}, "2026-10", None, "practitioner")
+        apply_gates(graph, raw, "2026-10", None, "practitioner")
         self.assertEqual(graph["gates"]["taste_name"], "practitioner")
 
 

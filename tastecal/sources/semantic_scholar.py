@@ -11,7 +11,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 
 from tastecal.core.http import Http, HttpError
-from tastecal.core.model import Candidate, Item
+from tastecal.core.model import Candidate, Item, junk_title
 from tastecal.sources import Source, cue_score
 
 log = logging.getLogger("tastecal.s2")
@@ -83,7 +83,7 @@ def normalise_ref(ref: str) -> Optional[str]:
 
 
 def to_item(p: Dict[str, Any]) -> Optional[Item]:
-    if not p or not p.get("paperId") or not p.get("title"):
+    if not p or not p.get("paperId") or not p.get("title") or junk_title(p["title"]):
         return None
     ext = p.get("externalIds") or {}
     arxiv = ext.get("ArXiv")
@@ -186,6 +186,17 @@ class SemanticScholar(Source):
                     log.info("found %r through OpenAlex (%s)", w.get("title"), pid)
                     return item
         return None
+
+    def counts(self, pid: str) -> Optional[dict]:
+        """{"influential": influential citations, "s2_cites": citations} for the taste fit, or None."""
+        try:
+            data = self._get("/paper/" + pid, fields="citationCount,influentialCitationCount")
+        except HttpError as e:
+            log.info("counts failed for %s: %s", pid, e)
+            return None
+        if not isinstance(data, dict):
+            return None
+        return {"influential": data.get("influentialCitationCount"), "s2_cites": data.get("citationCount")}
 
     def by_id(self, pid: str) -> Optional[Item]:
         try:

@@ -8,6 +8,13 @@ taste.json
 taste.md
 profiles/
 papers/
+*.xlsx
+*.csv
+ratings*.txt
+ratings*.json
+ratings*.yaml
+ratings*.yml
+taste_clauses*.json
 
 # Personal run files and backups
 RUN-*.md

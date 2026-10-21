@@ -100,6 +100,10 @@ class Node:
     role: str = ""
     threads: List[str] = field(default_factory=list)
     score: float = 0.0
+    # A tool or idea from another field that the map's works use: kept one hop from them, never expanded, and its
+    # own limitations do not enter the problem ledger.
+    borrowed: bool = False
+    must: bool = False      # named by you as must-read: put on the map with the seed and opened like it
 
 
 @dataclass
@@ -135,6 +139,28 @@ def problem_words(text: str) -> set:
                 break
         out.add(w)
     return out
+
+
+JUNK_TITLE = re.compile(r"will be inserted by the editor|manuscript no\b|^(untitled|title|abstract|preprint|front matter|"
+                        r"table of contents|contents|editorial|index|erratum|corrigendum)\.?$", re.I)
+
+
+def junk_title(title: str) -> bool:
+    """A title that is broken metadata, not a paper: a journal template line, a fragment like "and s", a bare
+    section name. Such records only fill the map with nothing to read."""
+    t = " ".join((title or "").split())
+    if CJK.search(t):
+        return len(t) < 4
+    return len(t) < 8 or bool(JUNK_TITLE.search(t))
+
+
+CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
+
+
+def search_queries(qs) -> List[str]:
+    """The usable search queries: non-empty strings with no Chinese, Japanese or Korean characters. The paper search
+    engines index English titles and abstracts, so a query written in the report's language finds nothing."""
+    return [q.strip() for q in (qs or []) if isinstance(q, str) and q.strip() and not CJK.search(q)]
 
 
 def word_overlap(a: str, b: str) -> float:

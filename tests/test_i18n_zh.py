@@ -45,6 +45,8 @@ ENGLISH_UI = [
     "Prediction cutoff", "No later match", "Realised", "Full problem ledger", "Read the seed", "Synthesize",
     "Hidden gem?", "Overhyped?", "\"Classic\"", "\"Noise\"", "Fold these works back", "click to ",
     "Symptom", "\"Why?\"", "Show on map", "None recorded", "Close details", "Work details", "Lineage map",
+    "Lineage and logic", "Taste calibration", "Show on the map", "Unlocked by these insights", ">Mechanism<",
+    ">Threads<", ">Method<", "The lineage of", "Keywords",
 ]
 
 
@@ -91,8 +93,8 @@ class I18nZhTest(unittest.TestCase):
         left = [p for p in ENGLISH_UI if p in chrome]
         self.assertEqual(left, [])
         # values the script compares against stay English
-        for kept in ('x.basis !== "full text"', 'p.overlap === "same idea"', 'e.confidence === "stated"',
-                     'r.kind === "symptom"', 'n.kind !== "paper"', 'verdict === "not-delivered"'):
+        for kept in ('n.gates.basis !== "full text"', 'p.overlap === "same idea"', 'e.confidence === "stated"',
+                     'r.kind === "symptom"', 'n.kind !== "paper"'):
             self.assertIn(kept, chrome)
         frag = render.render_html(with_lang("zh-CN"), fragment=True)
         self.assertNotIn("<html", frag)
@@ -102,7 +104,8 @@ class I18nZhTest(unittest.TestCase):
         for lang in (None, "en", "en-US"):
             g = with_lang(lang)
             data = json.dumps(g, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
-            body = self.tpl.replace(render.MARKER, data).replace("__TITLE__", html.escape("SeedNet Lineage"))
+            body = (self.tpl.replace(render.MARKER, data).replace("__TITLE__", html.escape("SeedNet Lineage"))
+                    .replace(render.TASTE_MARKER, ""))
             self.assertEqual(render.render_html(g), render.STANDALONE_HEAD + body + render.STANDALONE_TAIL)
             self.assertEqual(render.render_html(g, fragment=True), body)
             self.assertEqual(render.page_title(g), "SeedNet Lineage")
