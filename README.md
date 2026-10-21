@@ -33,13 +33,15 @@ You need Python 3.9 or newer and no extra packages. Runs bill your Claude or Cha
 
 ## Read the report
 
-`report.html` has two parts, switched at the top left: **Lineage and logic**, and **Taste calibration**. The screenshots show a report written in Chinese (`--language zh-CN`) on adversarial traffic-scene generation; its parts are called 脉络与逻辑 and 审美校准.
+`report.html` has two parts, switched at the top left: **Lineage and logic**, and **Taste calibration**. The screenshots below show English views of a report on adversarial traffic-scene generation.
 
 ![Mechanism](images/3.png)
 
 **Mechanism.** The field's goal, and the core tension every work moves along (here: the more dangerous a scene, the further it is from real data). Below them, the insights that made progress possible, each with the works that brought it, and the driving forces (F1, F2, …): root causes no single paper can change, each with its kind (data, the field's goal, a mathematical fact, hardware, economics) and the threads it drives. The top line counts works, links, threads and forces; the bars show works per year.
 
-![Map](images/6.png)
+[![Lineage map with side branches expanded](images/6.jpg)](images/6.jpg)
+
+*The map with side branches expanded. Click the image to view it at full size.*
 
 **Map.** Each coloured line is a problem thread and each station a work, placed by date. The seed is the tall interchange every line passes through. Links run from earlier to later work and say what kind they are: resolves, extends, inspired, competes, applies, explains (challenges in red). Side branches are folded into the "+N" badge on their line; *Show* unfolds them. Hover a station for a summary; click it for its card: what it inherits, its move, its key insight, what it leaves open, and the works before and after it. *List* shows the same works as a table.
 
