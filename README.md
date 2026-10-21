@@ -17,7 +17,9 @@ You need Python 3.9 or newer and no extra packages. Runs bill your Claude or Cha
 
 `python3 -m tastecal serve` opens a local page (on this computer only).
 
-![The page: the paper and the run](images/1.png)
+<p align="center">
+  <a href="images/1.png"><img src="images/1.png" alt="The page: the paper and the run" width="560"></a>
+</p>
 
 1. **Paper**: a title, link, DOI or arXiv id. The map grows from it.
 2. **Limit to a field** (optional): works from other fields, such as a generic diffusion model or a backbone, are listed as borrowed tools instead of being mapped.
@@ -25,7 +27,9 @@ You need Python 3.9 or newer and no extra packages. Runs bill your Claude or Cha
 4. **Model** and **effort**: your Claude Code or ChatGPT login. Opus 5.5 at high or extra high effort works well.
 5. **Max papers** and **report language**: 30 to 50 papers; English or Chinese.
 
-![The page: your taste](images/2.png)
+<p align="center">
+  <a href="images/2.png"><img src="images/2.png" alt="The page: your taste" width="520"></a>
+</p>
 
 6. **Your taste** (optional): papers you rated, each with your score of its real contribution from 0 to 1 and a line on why. They need not come from the seed's field. *Load a saved taste* also lists the ratings files in the project folder (`ratings*.json` and the like); *Paste a list* and *Import a file* add more; *Save this taste* keeps them in `taste.json`. The three rows shown while the list is empty are examples (two made-up titles) and are never sent.
 7. The dots at the bottom show whether the free Semantic Scholar and OpenAlex keys are set (see Setup).
@@ -35,21 +39,29 @@ You need Python 3.9 or newer and no extra packages. Runs bill your Claude or Cha
 
 `report.html` has two parts, switched at the top left: **Lineage and logic**, and **Taste calibration**. The screenshots below show English views of a report on adversarial traffic-scene generation.
 
-![Mechanism](images/3.png)
+<p align="center">
+  <a href="images/3.png"><img src="images/3.png" alt="Mechanism" width="900"></a>
+</p>
 
 **Mechanism.** The field's goal, and the core tension every work moves along (here: the more dangerous a scene, the further it is from real data). Below them, the insights that made progress possible, each with the works that brought it, and the driving forces (F1, F2, …): root causes no single paper can change, each with its kind (data, the field's goal, a mathematical fact, hardware, economics) and the threads it drives. The top line counts works, links, threads and forces; the bars show works per year.
 
-[![Lineage map with side branches expanded](images/6.jpg)](images/6.jpg)
+<p align="center">
+  <a href="images/6.jpg"><img src="images/6.jpg" alt="Lineage map with side branches expanded" width="1200"></a>
+</p>
 
 *The map with side branches expanded. Click the image to view it at full size.*
 
 **Map.** Each coloured line is a problem thread and each station a work, placed by date. The seed is the tall interchange every line passes through. Links run from earlier to later work and say what kind they are: resolves, extends, inspired, competes, applies, explains (challenges in red). Side branches are folded into the "+N" badge on their line; *Show* unfolds them. Hover a station for a summary; click it for its card: what it inherits, its move, its key insight, what it leaves open, and the works before and after it. *List* shows the same works as a table.
 
-![Threads](images/5.png)
+<p align="center">
+  <a href="images/5.png"><img src="images/5.png" alt="Threads" width="900"></a>
+</p>
 
 **Threads.** The threads, grouped by driving force. Pick one to read its why-ladder from the top: the symptom researchers saw, then "why?" asked until the answer reaches a root. Below it are the problems on that thread still open, with the works that raised them. **Story** tells the field as a narrative for a newcomer. **What's next** lists who is working on what in the last year, the open questions with the experiment that would settle each, and the assumptions most works share. **Method** shows how the map was grown, round by round, and the full problem ledger.
 
-![Taste calibration](images/4.png)
+<p align="center">
+  <a href="images/4.png"><img src="images/4.png" alt="Taste calibration" width="900"></a>
+</p>
 
 **Taste calibration.** Read the four numbers first:
 
