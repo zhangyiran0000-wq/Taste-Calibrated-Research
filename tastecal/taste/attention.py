@@ -7,11 +7,14 @@ are set against. Several measures, all counts:
     influential  Semantic Scholar's influential citations a year (citations that build on the work, not a mention)
     stars        GitHub stars a year, when the audit found the work's repository
 
-A count is put on 0 to 1 on a log scale anchored at the paper you rated highest: x = s0 * log(1 + v) / log(1 + v0),
-where v0 is that paper's count and s0 your score of it, so it sits on y = x at your own score, no citation is 0, and
-a count above v0 goes past s0 (up to 1). Citations spread over orders of magnitude, so the log, not the count, is
-compared with your linear scores. When none of your rated papers has the measure, Attention Is All You Need
-(ANCHOR_TITLE, looked up in every run) is 1, else the most attended paper known.
+A count is put on 0 to 1 against papers of the same age (age_scale): citations pile up with age, so a paper is set
+against the typical count of a paper of its age among the papers compared (a line through log(1 + count) against
+log(months), fitted on those a year old or more), on a log scale: 0.5 is typical for its age, and the axis is
+stretched so the middle 80% of these papers spans half of it. The landmark is the paper you rated highest (Attention
+Is All You Need when none of your rated papers has a count: it is looked up in every run as ANCHOR_TITLE). It sits at
+your score of it when the field still spans half to SPREAD_MAX of the axis that way; one far beyond the field makes
+the axis past BREAK compressed so it still fits, and a paper of the field as attended as it would land beside it. Papers under NEW_MONTHS are not placed: their counts say
+too little yet. With fewer than six papers a year old, the plain log scale of `scale` is used instead.
 
 Every paper also gets a reliability: a paper months old with a handful of citations says little yet. It widens the
 paper's attention bar on the chart and lowers its weight in the fit; it never removes the paper.
@@ -139,28 +142,80 @@ def scale(rows: List[dict], metric: str, anchors: List[float] = (), top=None) ->
     half = len(vals) // 2
     med = vals[half] if len(vals) % 2 else math.expm1((math.log1p(vals[half - 1]) + math.log1p(vals[half])) / 2)
     x_top = round(max(0.05, min(1.0, float(x_top))), 3)
-    out = {"median": round(med, 3), "top": round(ref, 3), "x_top": x_top, "L": math.log1p(ref)}
-    if ORIGIN == "median" and x_top > 0.55 and math.log1p(ref) > math.log1p(med) + 0.5:
-        out.update(origin="median", Lm=math.log1p(med))
-    return out
+    return {"median": round(med, 3), "top": round(ref, 3), "x_top": x_top, "L": math.log1p(ref)}
 
 
-ORIGIN = "zero"     # "zero": no citation is 0; "median": these papers' median is 0.5 (compared on the page, one stays)
+AGE = True          # against papers of the same age (age_scale); False only to compare with the plain log scale
 
 
 def place(v: float, sc: dict) -> float:
-    """A count on 0 to 1: x_top * log(1 + v) / log(1 + top), at most 1 (or through the median at 0.5)."""
-    lv = math.log1p(max(0.0, v))
-    if sc.get("origin") == "median":
-        return max(0.0, min(1.0, 0.5 + (sc["x_top"] - 0.5) * (lv - sc["Lm"]) / (sc["L"] - sc["Lm"])))
-    return max(0.0, min(1.0, sc["x_top"] * lv / sc["L"]))
+    """A count on 0 to 1 on the plain log scale: x_top * log(1 + v) / log(1 + top), at most 1."""
+    return max(0.0, min(1.0, sc["x_top"] * math.log1p(max(0.0, v)) / sc["L"]))
 
 
 def count_at(x: float, sc: dict) -> float:
-    """The count that sits at x on this scale (the inverse of place)."""
-    if sc.get("origin") == "median":
-        return max(0.0, math.expm1(sc["Lm"] + (x - 0.5) * (sc["L"] - sc["Lm"]) / (sc["x_top"] - 0.5)))
+    """The count that sits at x on the plain log scale (the inverse of place)."""
     return math.expm1(max(0.0, x) / sc["x_top"] * sc["L"])
+
+
+NEW_MONTHS = 12      # younger: its counts say too little yet; not placed by attention, never fitted to it
+SPREAD = 0.5         # the middle 80% of the field's papers (a year old or more) spans at least this much of the axis
+SPREAD_MAX = 0.8     # and at most this much, however close to typical your top paper is
+BREAK = 0.88         # past this, the axis is compressed so the landmark still fits (drawn with a break)
+TOP_END = 0.98       # where the landmark lands when the axis is compressed
+
+
+def age_scale(rows: List[dict], metric: str, top=None) -> Optional[dict]:
+    """The age scale (see the module note): a paper's count against the typical count of a paper of its age among
+    these rows. The typical count: log(1 + v) = a + b log(months), fitted on the rows a year old or more; a paper's
+    ratio to it, r, is measured from these rows' median ratio, so the typical paper of its age is 0.5. Stretch: the
+    middle 80% of the rows spans SPREAD, or more when that puts `top` (count, your score, months) at your score.
+    When `top` would land past TOP_END, the axis past BREAK is compressed so it lands at TOP_END. None when fewer
+    than six rows are a year old with the measure."""
+    pts = [(math.log(r["m"]["months"]), math.log1p(max(0.0, float(r["m"][metric]))))
+           for r in rows if (r.get("m") or {}).get(metric) is not None and (r["m"].get("months") or 0) >= NEW_MONTHS]
+    if len(pts) < 6:
+        return None
+    mx, my = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+    sxx = sum((p[0] - mx) ** 2 for p in pts)
+    b = max(0.0, sum((p[0] - mx) * (p[1] - my) for p in pts) / sxx) if sxx > 1e-9 else 0.0
+    a = my - b * mx
+    res = sorted(p[1] - (a + b * p[0]) for p in pts)
+    med = quantile(res, 0.5)
+    span = max(quantile(res, 0.9) - quantile(res, 0.1), 0.3)
+    sc = {"kind": "age", "a": a, "b": b, "med": med, "k": SPREAD / span, "n": len(pts)}
+    if isinstance(top, (tuple, list)) and len(top) >= 3 and top[0] and top[2]:
+        r_top = math.log1p(float(top[0])) - (a + b * math.log(max(1.0, float(top[2])))) - med
+        sc["top_ratio"] = math.exp(r_top)
+        if r_top > 0:                            # your top paper at your score, if the field still spans half to
+            k_top = (float(top[1]) - 0.5) / r_top    # SPREAD_MAX of the axis; else where the field's stretch puts it
+            sc["k"] = max(sc["k"], min(k_top, SPREAD_MAX / span))
+        lin = 0.5 + sc["k"] * r_top
+        if lin > TOP_END:                        # far beyond the field: the end of the axis is compressed
+            sc["cut"] = lin
+        sc["top_x"] = round(_bend(lin, sc), 3)
+    return sc
+
+
+def _bend(lin: float, sc: dict) -> float:
+    """Past BREAK, the compressed part of the axis (when there is one)."""
+    if sc.get("cut") and lin > BREAK:
+        lin = BREAK + (lin - BREAK) * (TOP_END - BREAK) / (sc["cut"] - BREAK)
+    return max(0.0, min(1.0, lin))
+
+
+def age_ratio(v: float, months: float, sc: dict) -> float:
+    """How many times the typical paper of its age (on log(1 + count)): 1 is typical."""
+    return math.exp(math.log1p(max(0.0, v)) - (sc["a"] + sc["b"] * math.log(max(1.0, months))) - sc["med"])
+
+
+def age_place(v: float, months: float, sc: dict) -> float:
+    return _bend(0.5 + sc["k"] * math.log(age_ratio(v, months, sc)), sc)
+
+
+def ratio_at(t: float, sc: dict) -> float:
+    """Where "t times the typical paper of its age" sits on the axis."""
+    return _bend(0.5 + sc["k"] * math.log(t), sc)
 
 
 def position(rows: List[dict], metric: str, scores: Dict[str, float], anchors: List[float] = (),
@@ -176,6 +231,20 @@ def position(rows: List[dict], metric: str, scores: Dict[str, float], anchors: L
     is_log = metric in LOG_METRICS or all((r["m"].get("scale") == "log") for r in have)
     if not is_log:
         return on_scale(rows, metric, scores)
+    sa = age_scale(have, metric, top) if AGE else None
+    if sa:                                       # against papers of the same age; the newest are not placed
+        out = {}
+        vals = [max(0.0, float(r["m"][metric])) for r in have]
+        for r, v in zip(have, vals):
+            mo = r["m"].get("months")
+            if mo is None or mo < NEW_MONTHS:
+                continue
+            spread = (1 - r["m"].get("rel", 1.0)) * (v + 1)
+            out[r["id"]] = {"rank": round(rank(vals, v), 3), "x": round(age_place(v, mo, sa), 3),
+                            "t": round(age_ratio(v, mo, sa), 2),
+                            "lo": round(age_place(max(0.0, v - spread), mo, sa), 3),
+                            "hi": round(age_place(v + spread, mo, sa), 3)}
+        return out
     sc = scale(have, metric, anchors, top)
     vals = [max(0.0, float(r["m"][metric])) for r in have]
     out = {}

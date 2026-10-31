@@ -15,10 +15,12 @@ from tastecal.core.model import title_similarity
 
 TOP, BOTTOM = 0.6, 0.4     # along y = x: both sides above TOP is "both high", both below BOTTOM "both low" (old pages)
 QUAD = 0.5                 # the cross: taste score and attention each split at the middle of the scale
+RATED_AT = "attention"     # your rated papers: up, your score; across, their own attention ("line": on y = x)
+from tastecal.taste.attention import NEW_MONTHS  # noqa: E402
 W, PAD = 640, 56
 ZONES = ("gem", "hyped", "good", "junk")
 ZONE_COL = {"gem": "var(--focus)", "hyped": "var(--warn)", "good": "var(--ok)", "junk": "var(--muted)", "mid": "var(--hair)",
-            "rated": "var(--ink)"}
+            "rated": "var(--ink)", "new": "var(--hair)"}
 
 T = {
     "en": {
@@ -30,10 +32,11 @@ T = {
         "st_conf": "Trust in the result", "st_conf_v": "the larger, the less to trust",
         "conf_d": "Trust in the result: ±{rms:.2f}, how far the clauses miss your own scores (root mean square over your {n} rated papers; worst {worst:.2f}). The larger it is, the less to trust the result. It is added to every paper's taste-score bar, so the poorer the fit, the further a paper must be from y = x to count as clearly off.",
         "st_n": "Papers compared", "st_n_v": "{n} · last {y} years · {r} at random", "st_n_v0": "{n} · {r} at random",
-        "zone": {"gem": "To your taste, little attention", "hyped": "Much attention, not to your taste", "good": "To your taste, much attention", "junk": "Not to your taste, little attention", "mid": "Taste and attention even", "rated": "You rated it"},
+        "zone": {"gem": "To your taste, little attention", "hyped": "Much attention, not to your taste", "good": "To your taste, much attention", "junk": "Not to your taste, little attention", "mid": "Taste and attention even", "rated": "You rated it", "new": "Under a year old"},
         "zone_d": {"gem": "Taste score 0.5 or more, attention under 0.5: overlooked good work, or too new to be noticed. Filled: clearly above y = x.", "hyped": "Attention 0.5 or more, taste score under 0.5: not to your taste, or carried by fame. Citations include use as a baseline and criticism: worth checking, not a verdict. Filled: clearly below y = x.", "good": "Taste score and attention both 0.5 or more.", "junk": "Taste score and attention both under 0.5."},
         "off_up": "clearly above y = x", "off_down": "clearly below y = x",
         "d_abs": "Abstract", "d_more": "Show all", "d_less": "Show less",
+        "t_ratio": "×{t} the typical paper of its age", "d_new": "under a year old: not placed by attention yet",
         "r_title": "Your score", "r_help": "0 to 1 with two decimals, and a line why, as in your ratings list. Saved to “{title}”; the next fit calibrates on it.",
         "r_score": "Your score, 0 to 1", "r_why": "Why, in a line", "r_save": "Save", "r_clear": "Remove",
         "r_bad": "A score from 0 to 1, such as 0.65.", "r_saved": "Saved. “{title}” now has {n} rated papers.", "r_removed": "Removed.",
@@ -48,15 +51,20 @@ T = {
         "how_log0": "How attention is put on 0 to 1: citations a year, on a log scale, through the normal distribution. The median of these papers ({median} a year) is the middle; below it the spread is these papers' own, so the little-cited new ones are spread out rather than pressed to 0; above it {anchor} is +3 sigma, so nothing of the field reaches the landmark. Papers without a citation count have no attention and are not drawn here.",
         "how_log1": "How attention is put on 0 to 1: citations a year, on a log scale, through the normal distribution, with the median of these papers ({median} a year) in the middle, no citation at -3 sigma and {anchor} at +3 sigma. Papers without a citation count have no attention and are not drawn here.",
         "how_log00": "How attention is put on 0 to 1: citations a year, on a log scale, through the normal distribution, with no citation at -3 sigma and {anchor} at +3 sigma. Papers without a citation count have no attention and are not drawn here.",
+        "how_age": "How attention is put on 0 to 1: citations a year against the typical paper of its age among these papers (a line through log citations against log age, fitted on the papers a year old or more), on a log scale. 0.5 is typical for its age; the axis is stretched so the middle 80% of these papers spans half of it, and the row under it reads ×0.3, ×1, ×3 the typical paper. {anchor}, the paper you rated highest, is ×{ratio} the typical paper of its age{where}. Papers under a year old are not placed: their citations say too little yet. They sit in the strip on the left at their taste score and are not fitted. Papers without a citation count have no attention and are not drawn here.",
+        "how_age0": "How attention is put on 0 to 1: citations a year against the typical paper of its age among these papers (a line through log citations against log age, fitted on the papers a year old or more), on a log scale. 0.5 is typical for its age; the axis is stretched so the middle 80% of these papers spans half of it, and the row under it reads ×0.3, ×1, ×3 the typical paper. Papers under a year old are not placed: their citations say too little yet. They sit in the strip on the left at their taste score and are not fitted.",
+        "age_cut": ": so that it fits, the axis past the break (//) is compressed, and a paper of this field as attended as it would land beside it",
+        "age_mine": ", and sits at your score of it", "age_at": ", and sits at {x}",
+        "how_rated_att": "Diamonds are your rated papers: up, your own score; across, their own attention (one without a citation count sits on y = x), with a tick to the taste score the clauses give them. Their attention is never fitted: your scores are the constraint.",
         "how_logz": "How attention is put on 0 to 1: citations a year on a log scale, anchored at {anchor}, the paper you rated highest: its {top} citations a year sit at your score of it ({x_top}), on y = x. No citation is 0, and every tenfold more citations moves a paper the same distance right, up to 1; the cross at 0.5 is about {mid} citations a year. Papers without a citation count have no attention and are not drawn here.",
         "how_logz1": "How attention is put on 0 to 1: citations a year on a log scale. None of your rated papers has a citation count, so {anchor} ({top} a year) is 1 and no citation is 0; every tenfold more citations moves a paper the same distance right, and the cross at 0.5 is about {mid} citations a year. Papers without a citation count have no attention and are not drawn here.",
-        "how_logm": "How attention is put on 0 to 1: citations a year on a log scale through two points: the median of these papers ({median} a year) is 0.5, and {anchor}, the paper you rated highest, sits at your score of it ({x_top}) with {top} a year, on y = x. Every tenfold more citations moves a paper the same distance right; the scale stops at 0 and 1. Papers without a citation count have no attention and are not drawn here.",
         "vx": "field attention (same scale) →", "vy": "taste score (your clauses) →",
+        "vx_age": "field attention (against papers of the same age, log scale) →", "new_strip": "< 1 yr",
         "vx_log": "field attention ({unit}, log scale) →", "vx_norm": "field attention (citations a year, normal scale) →",
         "unit": {"cumulative": "citations a year", "recent": "citations a month", "influential": "influential citations a year", "stars": "GitHub stars a year"},
         "labels": "Names", "lab_key": "clearly off and yours", "lab_all": "all", "lab_none": "hide all", "bars": "Error bars",
         "lg_map": "a paper on the map (colour: its thread)", "lg_tp": "turning point", "lg_rand": "drawn at random", "lg_seed": "the seed paper",
-        "lg_off": "filled: clearly off", "lg_young": "dashed: under a year old", "lg_rated": "you rated it: on y = x at your own score",
+        "lg_off": "filled: clearly off", "lg_young": "dashed: under a year old", "lg_rated": "you rated it: on y = x at your own score", "lg_rated_att": "you rated it: up, your own score; across, its own attention",
         "none": "None.",
         "f": {"all": "All", "rated": "Rated by you", "off": "Clearly off", "random": "At random"}, "search": "Search titles",
         "c_paper": "Paper", "c_date": "Year", "c_score": "Taste score", "c_att": "Attention", "c_gap": "Gap", "c_zone": "Where", "c_levels": "Levels",
@@ -138,10 +146,11 @@ T = {
         "st_conf": "结果可信度", "st_conf_v": "绝对值越大越不准",
         "conf_d": "结果可信度 ±{rms:.2f}：条款给出的分与你的打分之间的均方根偏差（共 {n} 篇，最大 {worst:.2f}），绝对值越大越不准。这个偏差已计入每篇文章审美分的误差条，所以偏差越大，文章要离 y = x 越远才算明显偏离。",
         "st_n": "比较的文章", "st_n_v": "{n} 篇 · 近 {y} 年 · 随机 {r} 篇", "st_n_v0": "{n} 篇 · 随机 {r} 篇",
-        "zone": {"gem": "合你审美、关注少", "hyped": "关注多、不合你审美", "good": "合你审美、关注也多", "junk": "不合你审美、关注也少", "mid": "审美和关注相当", "rated": "你打过分的"},
+        "zone": {"gem": "合你审美、关注少", "hyped": "关注多、不合你审美", "good": "合你审美、关注也多", "junk": "不合你审美、关注也少", "mid": "审美和关注相当", "rated": "你打过分的", "new": "不满一年"},
         "zone_d": {"gem": "审美分 0.5 以上、关注度不到 0.5：可能是被忽视的好文章，也可能太新，还没被注意。实心的明显在 y = x 上方。", "hyped": "关注度 0.5 以上、审美分不到 0.5：可能不合你的审美，也可能靠名气撑起来。引用也包括被当基线和被批评，所以是值得核对的候选，不是结论。实心的明显在 y = x 下方。", "good": "审美分和关注度都在 0.5 以上。", "junk": "审美分和关注度都不到 0.5。"},
         "off_up": "明显在 y = x 上方", "off_down": "明显在 y = x 下方",
         "d_abs": "摘要", "d_more": "展开", "d_less": "收起",
+        "t_ratio": "同龄典型文章的 ×{t}", "d_new": "不满一年：还不按关注度摆放",
         "r_title": "你的打分", "r_help": "0–1 的两位小数，加一句评论，和你的打分列表一样。存进“{title}”，下次校准会用上。",
         "r_score": "你的分数，0 到 1", "r_why": "一句话评论", "r_save": "保存", "r_clear": "删除",
         "r_bad": "请填 0 到 1 之间的分数，比如 0.65。", "r_saved": "已保存。“{title}”现在有 {n} 篇打过分的论文。", "r_removed": "已删除。",
@@ -156,15 +165,20 @@ T = {
         "how_log0": "关注度怎么换算：每年引用数取对数，按正态分布换算到 0–1。这批文章的中位数（每年 {median} 次）在正中；中位数以下按这批文章自身的离散度换算，引用少的新文章会散开，不会挤在 0 附近；中位数以上 {anchor} 记为 +3σ，领域里的文章都到不了它的位置。没有引用数的文章没有关注度，不画在这张图上。",
         "how_log1": "关注度怎么换算：每年引用数取对数，按正态分布换算到 0–1：这批文章的中位数（每年 {median} 次）在正中，0 次引用记为 −3σ，{anchor} 记为 +3σ。没有引用数的文章没有关注度，不画在这张图上。",
         "how_log00": "关注度怎么换算：每年引用数取对数，0 次引用记为 −3σ，{anchor} 记为 +3σ，按正态分布换算到 0–1。没有引用数的文章没有关注度，不画在这张图上。",
+        "how_age": "关注度怎么换算：每年引用数和这批文章里同龄的典型文章相比（用一年以上的文章拟合引用数对数与发表月数对数的直线），取对数。0.5 是同龄的典型水平；横轴拉伸到让中间 80% 的文章占一半宽度，下面一行是典型水平的 ×0.3、×1、×3。你打分最高的 {anchor} 是同龄典型文章的 ×{ratio}{where}。不满一年的文章引用还说明不了什么，不按关注度摆放：它们在左侧条带里，高度是审美分，也不参与拟合。没有引用数的文章没有关注度，不画在这张图上。",
+        "how_age0": "关注度怎么换算：每年引用数和这批文章里同龄的典型文章相比（用一年以上的文章拟合引用数对数与发表月数对数的直线），取对数。0.5 是同龄的典型水平；横轴拉伸到让中间 80% 的文章占一半宽度，下面一行是典型水平的 ×0.3、×1、×3。不满一年的文章引用还说明不了什么，不按关注度摆放：它们在左侧条带里，高度是审美分，也不参与拟合。",
+        "age_cut": "：为了放得下，断点（//）右边的横轴是压缩的；这个领域里关注度和它一样高的文章会落在它旁边",
+        "age_mine": "，放在你给它的分处", "age_at": "，放在 {x}",
+        "how_rated_att": "菱形是你打过分的文章：高度是你给的分，横向是它自己的关注度（没有引用数的放在 y = x 上），短竖线指到条款给出的审美分。它们的关注度不参与拟合，你的分是约束。",
         "how_logz": "关注度怎么换算：每年引用数取对数，以你打分最高的 {anchor} 为锚：它每年 {top} 次引用放在你给它的分（{x_top}）处，正好在 y = x 上。0 次引用为 0，引用每多十倍向右移同样的距离，最多到 1；十字的 0.5 约对应每年 {mid} 次引用。没有引用数的文章没有关注度，不画在这张图上。",
         "how_logz1": "关注度怎么换算：每年引用数取对数。你打过分的文章都没有引用数，所以 {anchor}（每年 {top} 次）记为 1，0 次引用为 0；引用每多十倍向右移同样的距离，十字的 0.5 约对应每年 {mid} 次引用。没有引用数的文章没有关注度，不画在这张图上。",
-        "how_logm": "关注度怎么换算：每年引用数取对数，过两个点：这批文章的中位数（每年 {median} 次）为 0.5；你打分最高的 {anchor} 每年 {top} 次，放在你给它的分（{x_top}）处，正好在 y = x 上。引用每多十倍向右移同样的距离，到 0 和 1 为止。没有引用数的文章没有关注度，不画在这张图上。",
         "vx": "领域关注度（换算到同一把尺）→", "vy": "审美分（按你的条款）→",
+        "vx_age": "领域关注度（与同龄文章比，对数刻度）→", "new_strip": "不满一年",
         "vx_log": "领域关注度（{unit}，对数刻度）→", "vx_norm": "领域关注度（每年引用数，按正态分布换算）→",
         "unit": {"cumulative": "每年引用数", "recent": "每月引用数", "influential": "每年有影响的引用", "stars": "每年 GitHub star"},
         "labels": "名称", "lab_key": "偏离的和你打过分的", "lab_all": "全部", "lab_none": "隐藏全部", "bars": "误差线",
         "lg_map": "图上的文章（颜色 = 所在的线）", "lg_tp": "转折点", "lg_rand": "随机抽的", "lg_seed": "种子文章", "lg_off": "实心：明显偏离",
-        "lg_young": "虚线：不满一年", "lg_rated": "你打过分的：放在 y = x 上你给的分处",
+        "lg_young": "虚线：不满一年", "lg_rated": "你打过分的：放在 y = x 上你给的分处", "lg_rated_att": "你打过分的：高度是你给的分，横向是它自己的关注度",
         "none": "无。",
         "f": {"all": "全部", "rated": "你打过分的", "off": "明显偏离", "random": "随机抽的"}, "search": "搜索标题",
         "c_paper": "文章", "c_date": "年份", "c_score": "审美分", "c_att": "关注度", "c_gap": "偏离", "c_zone": "位置", "c_levels": "条款等级",
@@ -340,12 +354,17 @@ def view_chart(res: dict, L: dict, metric: str, vw: dict) -> str:
     lo_v, hi_v = 0.0, 1.0      # always the whole scale, so the cross is in the middle and the four squares are equal
     span = 1.0
     side = W - 2 * PAD
-    x0, x1, y1 = 46.0, 46.0 + side, 30.0
+    asc = (res.get("attention_scale") or {}).get(metric) or {}
+    by_age = asc.get("kind") == "age"
+    # papers under a year old: not placed by attention, drawn in their own strip left of the chart
+    new_rows = ([r for r in res.get("map") or [] if r["id"] not in pos and (r.get("m") or {}).get(metric) is not None
+                 and ((r.get("m") or {}).get("months") or 0) < NEW_MONTHS] if by_age else [])
+    strip = 44.0 if new_rows else 0.0
+    x0, x1, y1 = 46.0 + strip, 46.0 + strip + side, 30.0
     y0 = y1 + side
     px = lambda v: x0 + (max(lo_v, min(hi_v, v)) - lo_v) / span * side  # noqa: E731
     py = lambda v: y0 - (max(lo_v, min(hi_v, v)) - lo_v) / span * side  # noqa: E731
-    ticks = (((res.get("attention_scale") or {}).get(metric) or {}).get("ticks")
-             if metric != "cumulative" or res.get("attention_source") == "citations a year" else None)
+    ticks = (asc.get("ticks") if metric != "cumulative" or res.get("attention_source") == "citations a year" else None)
     width, height = x1 + 14, y0 + (62 if ticks else 46)
     out = [f'<svg class="att" viewBox="0 0 {width:.0f} {height:.0f}" role="img" aria-label="{esc(L["v_title"].get(metric, metric))}">']
     counts = {z: 0 for z in ZONES}
@@ -356,6 +375,10 @@ def view_chart(res: dict, L: dict, metric: str, vw: dict) -> str:
     for key, (ax, ay, bx, by) in (("gem", (x0, y1, mx, my)), ("good", (mx, y1, x1, my)),
                                   ("hyped", (mx, my, x1, y0)), ("junk", (x0, my, mx, y0))):
         out.append(f'<rect class="q-quad {key}" x="{ax:.1f}" y="{ay:.1f}" width="{bx - ax:.1f}" height="{by - ay:.1f}"/>')
+    if by_age and asc.get("break"):    # the compressed end of the axis, up to the landmark
+        bx_ = px(asc["break"])
+        out.append(f'<rect class="q-cut" x="{bx_:.1f}" y="{y1}" width="{x1 - bx_:.1f}" height="{y0 - y1:.1f}"/>'
+                   f'<line class="q-cutl" x1="{bx_:.1f}" x2="{bx_:.1f}" y1="{y1}" y2="{y0}"/>')
     band = _band_part(lo_v, hi_v, far)
     if len(band) >= 3:
         out.append(f'<polygon class="q-band" points="{" ".join(f"{px(a_):.1f},{py(b_):.1f}" for a_, b_ in band)}"/>')
@@ -366,7 +389,26 @@ def view_chart(res: dict, L: dict, metric: str, vw: dict) -> str:
         v = round(lo_v + i * span / 4, 3)
         out.append(f'<text class="ax-t" x="{px(v):.1f}" y="{y0 + 16:.1f}" text-anchor="middle">{v:g}</text>'
                    f'<text class="ax-t" x="{x0 - 6:.1f}" y="{py(v) + 4:.1f}" text-anchor="end">{v:g}</text>')
-    if ticks:                  # a second row in counts, the log axis read off directly: 0, 1, 10, 100, ... and the cross
+    if ticks and by_age:       # a second row: times the typical paper of its age, and where the landmark is
+        shown = []
+        if asc.get("top_x") is not None and asc.get("top_title"):
+            words = re.findall(r"[A-Za-z0-9]+", asc["top_title"])
+            nick = "".join(w[0].upper() for w in words) if len(words) >= 3 else _short(asc["top_title"], 14)
+            tx = px(asc["top_x"])
+            shown.append(asc["top_x"])
+            out.append(f'<line class="ax-m strong" x1="{tx:.1f}" x2="{tx:.1f}" y1="{y0}" y2="{y0 + 5}"/>'
+                       f'<text class="ax-c mid" x="{tx:.1f}" y="{y0 + 31:.1f}" text-anchor="end">'
+                       f'{esc(nick)} ×{fmt_count(asc.get("top_ratio") or 0)}</text>')
+        for t, c in sorted(ticks, key=lambda z: abs(z[1] - 1)):          # ×1 first
+            if all(abs(px(t) - px(u)) >= (64 if u == asc.get("top_x") else 26) for u in shown):
+                shown.append(t)
+                out.append(f'<line class="ax-m" x1="{px(t):.1f}" x2="{px(t):.1f}" y1="{y0}" y2="{y0 + 4}"/>'
+                           f'<text class="ax-c{" mid" if c == 1 else ""}" x="{px(t):.1f}" y="{y0 + 31:.1f}" '
+                           f'text-anchor="middle">×{fmt_count(c)}</text>')
+        if asc.get("break"):
+            bx_ = px(asc["break"])
+            out.append(f'<path class="ax-brk" d="M{bx_ - 5:.1f},{y0 + 5:.1f} l4,-10 M{bx_ + 1:.1f},{y0 + 5:.1f} l4,-10"/>')
+    elif ticks:                # a second row in counts, the log axis read off directly: 0, 1, 10, 100, ... and the cross
         mid_c = ((res.get("attention_scale") or {}).get(metric) or {}).get("mid")
         marks_c = ([(QUAD, mid_c, True)] if mid_c is not None else []) + [(t, c, False) for t, c in ticks]
         shown = []
@@ -379,13 +421,14 @@ def view_chart(res: dict, L: dict, metric: str, vw: dict) -> str:
     mid = (y0 + y1) / 2
     log_ok = (metric != "cumulative" or res.get("attention_source") == "citations a year") and res.get("attention_source")
     newer = "x_top" in ((res.get("attention_scale") or {}).get(metric) or {})
-    vx = (L["vx_log"].format(unit=L["unit"].get(metric, "")) if log_ok and newer else L["vx_norm"] if log_ok else L["vx"])
+    vx = (L["vx_age"] if log_ok and by_age else
+          L["vx_log"].format(unit=L["unit"].get(metric, "")) if log_ok and newer else L["vx_norm"] if log_ok else L["vx"])
     out.append(f'<text class="ax-l" x="{x1:.1f}" y="{height - 6:.1f}" text-anchor="end">{esc(vx)}</text>'
                f'<text class="ax-l" x="14" y="{mid:.1f}" text-anchor="middle" transform="rotate(-90 14 {mid:.1f})">{esc(L["vy"])}</text>'
                f'<line class="fit" x1="{px(lo_v)}" y1="{py(lo_v)}" x2="{px(hi_v)}" y2="{py(hi_v)}"/>')
     key_labels, more_labels, marks = [], [], []
     for r in rated:            # your rated papers: on y = x at your score, a tick to what your clauses give
-        x, yv, yp = px(r["yours"]), py(r["yours"]), py(r["pred"])
+        x, yv, yp = px(r["ax"] if RATED_AT == "attention" and r.get("ax") is not None else r["yours"]), py(r["yours"]), py(r["pred"])
         rid = "rated:" + str(r.get("key") or r["title"])
         out.append(f'<g class="anc" data-id="{esc(rid)}" data-z="rated" tabindex="0" role="button" aria-label="{esc(r["title"])}">'
                    f'<title>{esc(r["title"])} · {r["yours"]:.2f}</title>'
@@ -422,6 +465,22 @@ def view_chart(res: dict, L: dict, metric: str, vw: dict) -> str:
             key_labels.insert(0, (x, y, rad + 4, f'{L["lg_seed"]}：{_name(r, 18)}' if L is T["zh"] else f'{L["lg_seed"]}: {_name(r, 18)}', "lbl strong key"))
         else:
             (key_labels if off else more_labels).append((x, y, rad, _name(r, 18), "lbl strong key" if off else "lbl more"))
+    if new_rows:               # under a year old: at their taste score, in a strip of their own
+        sx0, sx1 = 46.0, 46.0 + strip - 10
+        out.append(f'<rect class="q-new" x="{sx0:.1f}" y="{y1}" width="{sx1 - sx0:.1f}" height="{y0 - y1:.1f}" rx="8"/>'
+                   f'<text class="ax-t" x="{(sx0 + sx1) / 2:.1f}" y="{y1 - 8:.1f}" text-anchor="middle">{esc(L["new_strip"])}</text>')
+        for k_, r in enumerate(sorted(new_rows, key=lambda r: r["pred"])):
+            x, y = sx0 + 9 + (k_ % 3) * 8, py(r["pred"])
+            rand = r.get("sample") == "random"
+            col = "var(--muted)" if rand else thread_color(res, r)
+            out.append(f'<g class="pt young{" rand" if rand else ""}" style="--fc:{col}" data-id="{esc(r["id"])}" data-z="new" tabindex="0" '
+                       f'role="button" aria-label="{esc(r.get("title") or r["id"])}"><title>{esc(r.get("title") or r["id"])}</title>'
+                       f'<circle class="halo" cx="{x:.1f}" cy="{y:.1f}" r="9"/><circle class="dot-o" cx="{x:.1f}" cy="{y:.1f}" r="4.5"/>'
+                       + (f'<rect class="seed-ring" x="{x - 8:.1f}" y="{y - 8:.1f}" width="16" height="16" rx="2"/>' if r.get("role") == "seed" else "")
+                       + '</g>')
+            marks.append((x - 8, y - 8, x + 8, y + 8))
+            if r.get("role") == "seed":
+                key_labels.insert(0, (x, y, 9, f'{L["lg_seed"]}：{_name(r, 18)}' if L is T["zh"] else f'{L["lg_seed"]}: {_name(r, 18)}', "lbl strong key"))
     # each square's name and count on a pill, in the first of its corners that no paper covers (the outer one first)
     qboxes = []
     hit = lambda b_: any(b_[0] < q_[2] and q_[0] < b_[2] and b_[1] < q_[3] and q_[1] < b_[3] for q_ in marks + qboxes)  # noqa: E731
@@ -457,7 +516,7 @@ def _legend(res: dict, L: dict) -> str:
         items.append((rand, L["lg_rand"]))
     items += [('<circle cx="8" cy="8" r="5" fill="var(--ink-2)" stroke="var(--ink-2)" stroke-width="2"/>', L["lg_off"]),
               ('<circle cx="8" cy="8" r="5" fill="var(--surface)" stroke="var(--ink-2)" stroke-width="2" stroke-dasharray="2.4 1.8"/>', L["lg_young"]),
-              ('<rect x="4" y="4" width="8" height="8" transform="rotate(45 8 8)" fill="var(--ink)"/>', L["lg_rated"])]
+              ('<rect x="4" y="4" width="8" height="8" transform="rotate(45 8 8)" fill="var(--ink)"/>', L["lg_rated_att"] if RATED_AT == "attention" else L["lg_rated"])]
     shapes = "".join(f'<span><svg width="16" height="16" aria-hidden="true">{b}</svg>{esc(t)}</span>' for b, t in items)
     threads = "".join(f'<span><i class="ln" style="background:var(--l{(i % 6) + 1})"></i>{esc(t["name"])}</span>'
                       for i, t in enumerate(res.get("threads") or []))
@@ -602,7 +661,8 @@ def _data(res: dict, L: dict, names: List[str], vws: dict, fit_metric: str) -> d
         for metric, vw in vws.items():
             q = (vw.get("pos") or {}).get(r["id"])
             if q:
-                att[metric] = {"x": q["x"], "lo": q["lo"], "hi": q["hi"], "z": zone_of(r["pred"], q["x"]), "off": off_of(r["id"], vw)}
+                att[metric] = {"x": q["x"], "lo": q["lo"], "hi": q["hi"], "z": zone_of(r["pred"], q["x"]), "off": off_of(r["id"], vw),
+                               **({"t": q["t"]} if q.get("t") is not None else {})}
         rc = r.get("recheck") or {}
         recheck = ""
         if rc.get("against"):
@@ -616,12 +676,13 @@ def _data(res: dict, L: dict, names: List[str], vws: dict, fit_metric: str) -> d
                            "levels": {n: (None if (r.get("x") or {}).get(n) is None else round(r["x"][n] * 5)) for n in names},
                            "basis": {n: _basis(basis.get(n, "") if isinstance(basis, dict) else "") for n in names},
                            "att": att, "raw": _att_lines(r, L), "thread": thread_name(res, r),
-                           "tp": r.get("role") == "turning-point", "seed": r.get("role") == "seed", "recheck": recheck}
+                           "tp": r.get("role") == "turning-point", "seed": r.get("role") == "seed", "recheck": recheck,
+                           "young": ((r.get("m") or {}).get("months") or 99) < NEW_MONTHS}
         order.append(r["id"])
     i18n = {k: L[k] for k in ("d_yours", "d_fit", "d_reason", "d_score", "d_att", "d_levels", "d_not_higher",
                               "d_drivers", "d_thread", "d_att_none", "close", "prev", "next", "c_gap", "lg_tp", "lg_seed", "shown", "off_up", "off_down",
                               "d_abs", "d_more", "d_less", "r_title", "r_help", "r_score", "r_why", "r_save", "r_clear",
-                              "r_bad", "r_saved", "r_removed", "r_fail")}
+                              "r_bad", "r_saved", "r_removed", "r_fail", "t_ratio", "d_new")}
     i18n.update({"zone": L["zone"], "kind": L["kind"], "m_names": L["m_names"]})
     return {"names": names, "papers": papers, "order": order, "fit_metric": fit_metric, "i18n": i18n}
 
@@ -676,7 +737,7 @@ def _table(data: dict, L: dict, fit_metric: str) -> str:
         else:
             a = (p.get("att") or {}).get(fit_metric)
             score, att = p["score"], (a or {}).get("x")
-            gap, z, off = (None if att is None else score - att), (a or {}).get("z", "mid"), (a or {}).get("off", "")
+            gap, z, off = (None if att is None else score - att), (a or {}).get("z", "new" if p.get("young") else "mid"), (a or {}).get("off", "")
         title = p["title"] if p["title"] != p["name"] else ""
         rows.append(f'<tr data-id="{esc(pid)}" data-kind="{p["kind"]}" data-z="{z}" data-off="{off}" data-t="{esc((p["title"] + " " + p["name"]).lower())}" '
                     f'data-score="{score:.3f}" data-att="{"" if att is None else f"{att:.3f}"}" data-gap="{"" if gap is None else f"{gap:.3f}"}" '
@@ -812,9 +873,17 @@ def _build(res: dict, L: dict) -> dict:
     med = ((res.get("attention_scale") or {}).get(fit_metric) or {}).get("median")
     med_txt = "" if med is None else (f"{med:.1f}" if med < 10 else f"{med:.0f}")
     sc_ = (res.get("attention_scale") or {}).get(fit_metric) or {}
-    if log_scale and anchor and "x_top" in sc_:  # the log scale anchored at your top paper (since 2026-10-31)
+    if log_scale and sc_.get("kind") == "age":   # against papers of the same age (since 2026-11-01)
+        mine = any(title_similarity(r.get("title", ""), anchor) >= 0.9 for r in res.get("rated") or []) if anchor else False
+        where = (L["age_cut"] if sc_.get("break") else L["age_mine"] if mine else
+                 L["age_at"].format(x=f'{sc_.get("top_x") or 0:.2f}'))
+        how_items[0] = (L["how_age"].format(anchor=anchor, ratio=fmt_count(sc_.get("top_ratio") or 0), where=where)
+                        if anchor and sc_.get("top_ratio") else L["how_age0"])
+        if RATED_AT == "attention" and any(r.get("ax") is not None for r in res.get("rated") or []):
+            how_items[2] = L["how_rated_att"]
+    elif log_scale and anchor and "x_top" in sc_:  # the log scale anchored at your top paper (since 2026-10-31)
         mine = any(title_similarity(r.get("title", ""), anchor) >= 0.9 for r in res.get("rated") or [])
-        key = "how_logm" if sc_.get("origin") == "median" else "how_logz" if mine else "how_logz1"
+        key = "how_logz" if mine else "how_logz1"
         how_items[0] = L[key].format(anchor=anchor, median=med_txt, top=fmt_count(sc_.get("top", 0)),
                                      x_top=f'{sc_.get("x_top", 1):.2f}', mid=fmt_count(sc_.get("mid", 0)))
     elif log_scale and anchor:                   # older results: through the normal distribution
@@ -1058,6 +1127,9 @@ svg.att{width:100%;height:auto;background:var(--surface);border:1px solid var(--
 .ax{stroke:var(--ink-2);stroke-width:1} .ax-t{font:400 11.5px var(--f-display);fill:var(--muted)} .ax-l{font:600 12.5px var(--f-display);fill:var(--ink-2)}
 .q-quad{fill:none} .q-quad.gem{fill:var(--focus);opacity:.075} .q-quad.hyped{fill:var(--warn);opacity:.075} .q-quad.good{fill:var(--ok);opacity:.06}
 .q-band{fill:var(--ink);opacity:.045}
+.q-cut{fill:var(--ink);opacity:.035} .q-cutl{stroke:var(--muted);stroke-width:1;stroke-dasharray:2 3;opacity:.7}
+.ax-brk{stroke:var(--ink-2);stroke-width:1.4;fill:none} .ax-m.strong{stroke:var(--ink-2);stroke-width:1.6}
+.q-new{fill:var(--ink);opacity:.045}
 .dk .dyr{font:700 18px var(--f-display);color:var(--ink);letter-spacing:.01em;margin-right:8px}
 .dabs{margin:12px 0 4px} .dabs h3{margin:0 0 4px}
 .dabs p{margin:0;font-size:14px;line-height:1.6;color:var(--ink-2)}
@@ -1242,7 +1314,7 @@ function render(id){
   }else{
     var a=(p.att||{})[D.fit_metric];
     h+='<div class="dstats"><div><div class="k">'+esc(I.d_score)+'</div><div class="v">'+f2(p.score)+'</div><div class="m">±'+f2(p.unsure)+'</div></div>';
-    h+='<div><div class="k">'+esc(I.d_att)+' · '+esc(I.m_names[D.fit_metric]||'')+'</div><div class="v">'+(a?f2(a.x):'—')+'</div><div class="m">'+(a?esc(I.zone[a.z]||'')+(a.off?' · '+esc(I['off_'+a.off]):'')+' · '+esc(I.c_gap)+' '+sg(p.score-a.x):'')+'</div></div></div>';
+    h+='<div><div class="k">'+esc(I.d_att)+' · '+esc(I.m_names[D.fit_metric]||'')+'</div><div class="v">'+(a?f2(a.x):'—')+'</div><div class="m">'+(a&&a.t!=null?esc(I.t_ratio.replace('{t}',a.t))+' · ':'')+(!a&&p.young?esc(I.d_new):'')+(a?esc(I.zone[a.z]||'')+(a.off?' · '+esc(I['off_'+a.off]):'')+' · '+esc(I.c_gap)+' '+sg(p.score-a.x):'')+'</div></div></div>';
     if(rate())h+='<div class="rate">'+rateBlock(p)+'</div>';
     if(p.thread)h+='<div class="dsec"><h3>'+esc(I.d_thread)+'</h3><p>'+esc(p.thread)+'</p></div>';
     var ms=Object.keys(p.att||{});

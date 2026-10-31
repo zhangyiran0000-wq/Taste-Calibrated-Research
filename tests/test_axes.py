@@ -664,18 +664,18 @@ class RefitTest(unittest.TestCase):
         g = self.graph()
         res = axes.run(FieldScripted(), g, RATED)
         from tastecal.taste import attention as A
-        saved = A.scale
+        saved = A.age_scale
 
-        def wider(rows, metric, anchors=(), top=None):               # any change of scale goes through refit
-            sc = saved(rows, metric, anchors, top)
+        def wider(rows, metric, top=None):                           # any change of scale goes through refit
+            sc = saved(rows, metric, top)
             if sc:
-                sc["x_top"] *= 0.5
+                sc["k"] *= 0.5
             return sc
-        A.scale = wider
+        A.age_scale = wider
         try:
             again = axes.refit(json.loads(json.dumps(res)), g)
         finally:
-            A.scale = saved
+            A.age_scale = saved
         self.assertNotEqual([r["pred"] for r in again["map"]], [r["pred"] for r in res["map"]])
         for r in again["rated"]:
             self.assertLessEqual(abs(r["pred"] - r["yours"]), r["allowed"] + 1e-6)
@@ -701,8 +701,7 @@ class RefitTest(unittest.TestCase):
         preds = {c["id"]: 0.95 if c["id"] in ("p0", "p1") else 0.5 for c in cands}
         vw = axes.views(cands, preds, {c["id"]: 0.0 for c in cands}, 0.15)["cumulative"]
         self.assertIn("p1", vw["gem"])                               # old enough: listed
-        self.assertNotIn("p0", vw["gem"])                            # three months old: drawn, not listed
-        self.assertIn("p0", vw["young"])
+        self.assertNotIn("p0", vw["pos"])                            # three months old: not placed by attention at all
 
     def test_venue_and_authors_on_the_card(self):
         res = axes.run(FieldScripted(), self.graph(), RATED)
@@ -1028,44 +1027,80 @@ class TowardLineTest(unittest.TestCase):
         self.assertIsNone(axes.fit_weights(Xr, yr, [0.1, 0.1], [[0.5]], [0.5], [1.0], ([1.0], 0.0), [([1.0], 0.0)]))
 
     def test_attention_is_anchored_at_attention_is_all_you_need(self):
-        import math
         from tastecal.taste import attention as A
         g = field_graph()
         raw = {"cited_by": 200000, "by_year": {}, "pub": "2017-06-12"}
-        res = axes.run(FieldScripted(), g, RATED, anchor=raw)
+        res = axes.run(FieldScripted(), g, RATED, anchor=raw)        # none of your rated papers has a count
         self.assertEqual(res["attention_anchor"]["cumulative"], A.ANCHOR_TITLE)
-        months = A.months_since("2017-06", res["as_of"])
-        top = 200000 / (months / 12)
         sc = res["attention_scale"]["cumulative"]
-        self.assertAlmostEqual(sc["top"], top, places=1)              # the landmark is the top end
-        self.assertEqual(sc["top_title"], A.ANCHOR_TITLE)
-        r = next(r for r in res["map"] if r["id"] == "a4")
-        pos = res["views"]["cumulative"]["pos"]["a4"]["x"]
-        self.assertAlmostEqual(pos, round(A.place(r["m"]["cumulative"], A.scale([{"m": m["m"]} for m in res["map"]],
-                                                                                "cumulative", top=top)), 3), places=3)
-        self.assertLess(pos, 0.99)                                     # the map's most cited paper is below the landmark
-        self.assertAlmostEqual(pos, round(math.log1p(r["m"]["cumulative"]) / math.log1p(top), 3), places=3)   # at 1
+        self.assertEqual((sc["kind"], sc["top_title"], sc["break"], sc["top_x"]), ("age", A.ANCHOR_TITLE, A.BREAK, A.TOP_END))
+        self.assertGreater(sc["top_ratio"], 100)                      # far beyond the field: the end is compressed
+        xs = sorted(p["x"] for p in res["views"]["cumulative"]["pos"].values())
+        self.assertAlmostEqual(xs[len(xs) // 2], 0.5, delta=0.01)     # the typical paper of its age in the middle
+        self.assertLess(xs[-1], sc["top_x"])                          # nothing of the field reaches the landmark
+        self.assertGreaterEqual(xs[int(len(xs) * .9)] - xs[int(len(xs) * .1)], 0.45)   # the field spreads over the axis
         self.assertNotIn("m1", res["views"]["cumulative"]["pos"])       # no citation count: no attention, not fitted
 
     def test_attention_is_anchored_at_the_paper_you_rated_highest(self):
-        import math
-        from tastecal.taste import attention as A
         g = field_graph()
         for n in g["nodes"]:                                           # your rated papers have counts too
             if n["id"].startswith("n"):
                 n["citations"] = {"n1": 300, "n2": 900, "n7": 40}.get(n["id"], 60)
-        raw = {"cited_by": 200000, "by_year": {}, "pub": "2017-06-12"}
-        res = axes.run(FieldScripted(), g, RATED, anchor=raw)
-        top = max(res["rated"], key=lambda r: r["yours"])
+        res = axes.run(FieldScripted(), g, RATED, anchor={"cited_by": 200000, "by_year": {}, "pub": "2017-06-12"})
         self.assertEqual(res["attention_anchor"]["cumulative"], "Paper n1 Title Words")   # not the landmark
         sc = res["attention_scale"]["cumulative"]
-        self.assertAlmostEqual(sc["top"], top["m"]["cumulative"], places=2)
-        self.assertAlmostEqual(sc["x_top"], top["yours"], places=3)   # at your score: on y = x
-        self.assertAlmostEqual(A.place(sc["mid"], dict(sc, L=math.log1p(sc["top"]))), axes.QUAD, places=2)
-        r = next(r for r in res["map"] if r["id"] == "a4")
-        self.assertAlmostEqual(res["views"]["cumulative"]["pos"]["a4"]["x"],
-                               min(1.0, round(top["yours"] * math.log1p(r["m"]["cumulative"]) / math.log1p(sc["top"]), 3)),
-                               places=3)
+        top = max(res["rated"], key=lambda r: r["yours"])
+        self.assertEqual(top["ax"], sc["top_x"])                      # your rated papers drawn at their own attention
+        self.assertIsNone(sc["break"])                                # within reach of the field: no compressed end
+        self.assertTrue(all(r.get("ax") is not None for r in res["rated"]))
+
+
+class AgeScaleTest(unittest.TestCase):
+    def rows(self, spec):
+        return [{"id": f"p{i}", "m": {"cumulative": float(v), "months": mo, "scale": "log", "rel": 1.0}}
+                for i, (v, mo) in enumerate(spec)]
+
+    def field(self):
+        import math
+        spec = []
+        for k, mo in enumerate((12, 18, 24, 36, 48, 60, 72, 84)):       # typical: log(1 + v) = -1 + 1.2 log(months)
+            for f in (0.25, 1.0, 4.0):
+                spec.append((math.expm1(math.log(f) - 1 + 1.2 * math.log(mo)), mo))
+        return spec
+
+    def test_the_typical_paper_of_its_age_is_the_middle(self):
+        import math
+        from tastecal.taste import attention as A
+        sc = A.age_scale(self.rows(self.field()), "cumulative")
+        for mo in (12, 40, 84):                                       # on the curve, whatever its age: 0.5
+            self.assertAlmostEqual(A.age_place(math.expm1(-1 + 1.2 * math.log(mo)), mo, sc), 0.5, places=2)
+        self.assertGreater(A.age_place(100.0, 12, sc), A.age_place(100.0, 84, sc))   # the same count is more when young
+        lo, hi = A.ratio_at(0.25, sc), A.ratio_at(4.0, sc)
+        self.assertAlmostEqual(hi - lo, A.SPREAD, delta=0.02)          # the middle of the field spans half the axis
+        self.assertIsNone(A.age_scale(self.rows([(5, 30)] * 5 + [(0, 3)] * 9), "cumulative"))   # too few a year old
+
+    def test_your_top_paper_on_the_line_or_the_end_compressed(self):
+        import math
+        from tastecal.taste import attention as A
+        rows = self.rows(self.field())
+        typ = lambda mo, t: math.expm1(math.log(t) - 1 + 1.2 * math.log(mo))  # noqa: E731
+        sc = A.age_scale(rows, "cumulative", top=(typ(60, 8.0), 0.9, 60))        # just beyond the field: at your score
+        self.assertAlmostEqual(sc["top_x"], 0.9, places=2)
+        self.assertNotIn("cut", sc)
+        sc = A.age_scale(rows, "cumulative", top=(typ(100, 2000.0), 0.95, 100))  # far beyond: the end compressed
+        self.assertEqual(sc["top_x"], A.TOP_END)
+        self.assertAlmostEqual(A.age_place(typ(30, 2000.0), 30, sc), A.TOP_END, places=2)   # as attended: beside it
+        self.assertLess(A.ratio_at(4.0, sc), A.BREAK)                  # the field itself is not compressed
+        sc = A.age_scale(rows, "cumulative", top=(typ(60, 1.2), 0.9, 60))        # barely above typical: not over-stretched
+        self.assertLess(sc["top_x"], 0.9)
+        self.assertLessEqual(A.ratio_at(4.0, sc) - A.ratio_at(0.25, sc), A.SPREAD_MAX + 0.02)
+
+    def test_papers_under_a_year_are_not_placed(self):
+        from tastecal.taste import attention as A
+        rows = self.rows(self.field() + [(0.0, 4), (3.0, 9)])
+        pos = A.position(rows, "cumulative", {r["id"]: 0.5 for r in rows})
+        self.assertEqual(len(pos), len(rows) - 2)
+        self.assertTrue(all("t" in q for q in pos.values()))           # times the typical paper of its age, for the card
 
 
 class QuadrantTest(unittest.TestCase):
@@ -1087,9 +1122,11 @@ class QuadrantTest(unittest.TestCase):
         for cls in ("q-quad gem", "q-quad good", "q-quad hyped", "q-quad junk", "q-band", "q-pill gem", "ax-c mid"):
             self.assertIn(cls, html)
         self.assertNotIn("q-zone", html)                               # the corners beyond y = x are no longer shaded
-        self.assertIn("field attention (citations a year, log scale)", html)
+        self.assertIn("field attention (against papers of the same age, log scale)", html)
         sc = res["attention_scale"]["cumulative"]
-        self.assertEqual([t for t, _ in sc["ticks"]][:2], [0.0, round(math.log1p(1) / math.log1p(sc["top"]), 4)])
+        self.assertIn([0.5, 1], sc["ticks"])                           # ×1: typical for its age, at the cross
+        self.assertIn("ax-brk", html)                                  # the compressed end, up to the landmark
+        self.assertIn(">AIAYN ×", html)
         pos = res["views"]["cumulative"]["pos"]
         n = {z: sum(1 for r in res["map"] if r["id"] in pos and AV.zone_of(r["pred"], pos[r["id"]]["x"]) == z)
              for z in ("gem", "good", "hyped", "junk")}
@@ -1101,7 +1138,12 @@ class QuadrantTest(unittest.TestCase):
         self.assertEqual(data["papers"][res["map"][0]["id"]]["abstract"], "A short abstract about reusable setups.")
         self.assertIn("r_save", data["i18n"])
         self.assertIn("opts.rate.save(", html)                         # the score box, only when the report passes opts.rate
-        self.assertIn("is 1 and no citation is 0", html)              # none of your rated papers has a count: the landmark
+        self.assertIn("past the break (//) is compressed", html)       # the landmark, far beyond the field
+        young = json.loads(json.dumps(res))                            # a paper under a year old: in the strip on the left
+        pid = next(iter(young["views"]["cumulative"]["pos"]))
+        next(r for r in young["map"] if r["id"] == pid)["m"]["months"] = 4
+        young["views"]["cumulative"]["pos"].pop(pid)
+        self.assertIn('class="q-new"', page(young, "en"))
 
     def test_abstracts_are_looked_up_once(self):
         from tastecal.core.model import Item

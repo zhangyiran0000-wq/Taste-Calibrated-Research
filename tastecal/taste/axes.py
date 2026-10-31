@@ -1586,7 +1586,8 @@ def run(llm, graph: dict, rated_in: List[dict], works: Optional[List[str]] = Non
             log.warning("none of your rated papers has a citation count and %s could not be looked up: the most cited "
                         "paper known (%s) sits at 1 on the attention scale", A.ANCHOR_TITLE, top_of.get(A.FIT_METRIC, "?"))
         else:
-            log.info("attention scale: log of citations a year, anchored at %s", top_of.get(A.FIT_METRIC, "?"))
+            log.info("attention scale: citations against papers of the same age, log scale; landmark %s",
+                     top_of.get(A.FIT_METRIC, "?"))
 
     # the field: every paper as close to y = x as your scores allow
     field = (field_phase(llm, rated, cands, inds, ev1, A.FIT_METRIC, banned, anchors=anchors, top=tops) if cands
@@ -1666,14 +1667,14 @@ def _anchoring(rated_ms: List[tuple], cands: List[dict], anchor_m: Optional[dict
     for mt in A.METRICS:
         if mt == A.FIT_METRIC and att_source != "citations a year":
             continue                             # the run's own percentile, by rank: no count to anchor
-        mine = [(y[0], float(m[mt]), t) for t, m, *y in rated_ms
+        mine = [(y[0], float(m[mt]), t, m.get("months")) for t, m, *y in rated_ms
                 if y and isinstance(y[0], (int, float)) and m.get(mt) is not None and float(m[mt]) > 0]
         if mine:
-            yours, v, t = max(mine, key=lambda z: (z[0], z[1]))
-            tops[mt], top_of[mt] = (v, round(yours, 3)), t
+            yours, v, t, mo = max(mine, key=lambda z: (z[0], z[1]))
+            tops[mt], top_of[mt] = (v, round(yours, 3), mo), t
             continue
         if anchor_m and anchor_m.get(mt):
-            tops[mt], top_of[mt] = anchor_m[mt], A.ANCHOR_TITLE
+            tops[mt], top_of[mt] = (anchor_m[mt], 1.0, anchor_m.get("months")), A.ANCHOR_TITLE
             continue
         pool_ = [(m.get(mt), t) for t, m, *_ in rated_ms if m.get(mt) is not None]
         pool_ += [(c["m"].get(mt), c["node"].get("title", "")) for c in cands if c["m"].get(mt) is not None]
@@ -1810,14 +1811,28 @@ def _finish(sc: dict, field: dict, inds: List[dict], anchors: Dict[str, list], t
     for mt in A.METRICS:
         if mt == A.FIT_METRIC and att_source != "citations a year":
             continue
+        sa = A.age_scale([{"m": r["m"]} for r in map_rows], mt, tops.get(mt)) if A.AGE else None
+        if sa:                                   # against papers of the same age: the ticks are "x the typical paper"
+            lim = A.BREAK if sa.get("cut") else 1.0
+            att_scale[mt] = {"kind": "age", "top_title": top_of.get(mt, ""), "top_ratio": round(sa.get("top_ratio", 0), 1),
+                             "top_x": sa.get("top_x"), "break": A.BREAK if sa.get("cut") else None, "n": sa["n"],
+                             "new": sum(1 for r in map_rows if (r["m"] or {}).get(mt) is not None
+                                        and ((r["m"] or {}).get("months") or 0) < A.NEW_MONTHS),
+                             "ticks": [[round(A.ratio_at(t, sa), 4), t] for t in (0.03, 0.1, 0.3, 1, 3, 10, 30, 100)
+                                       if 0.0 < 0.5 + sa["k"] * math.log(t) <= lim]}
+            if mt == A.FIT_METRIC:               # your rated papers' own attention on this axis (the page may draw it)
+                for rr in sc["rated_rows"]:
+                    m_ = rr.get("m") or {}
+                    if m_.get(mt) is not None and m_.get("months"):
+                        rr["ax"] = round(A.age_place(float(m_[mt]), m_["months"], sa), 3)
+            continue
         s_ = A.scale([{"m": r["m"]} for r in map_rows], mt, anchors.get(mt, []), tops.get(mt))
         if s_:
             att_scale[mt] = {"median": s_["median"], "top": s_["top"], "x_top": s_["x_top"], "top_title": top_of.get(mt, ""),
                              "mid": round(A.count_at(QUAD, s_), 1),
                              # the counts a log axis marks (0, 1, 10, 100, ...), where they sit on 0 to 1
                              "ticks": [[round(A.place(v, s_), 4), v] for v in (0, 1, 10, 100, 1000, 10000, 100000, 1000000)
-                                       if v <= A.count_at(1.0, s_) * 1.0001],
-                             **({"origin": "median"} if s_.get("origin") == "median" else {})}
+                                       if v <= A.count_at(1.0, s_) * 1.0001]}
     field_info = {k_: v for k_, v in field.items() if k_ not in ("indicators", "targets", "weights", "pos", "w_end")}
     tg, targets, wts = sc["tg"], sc["targets"], sc["wts"]
     if tg:                                       # where the papers ended up, with the scoring as used (after the re-check)
