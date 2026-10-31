@@ -550,23 +550,26 @@ class ScaleTest(unittest.TestCase):
         self.assertEqual([m["cumulative"] for m in ms], [90.0] * 4 + [None])
         self.assertEqual((rated[0]["cumulative"], rated[0]["scale"]), (20000.0, "log"))
 
-    def test_the_typical_paper_sits_in_the_middle(self):
+    def test_counts_sit_on_a_log_scale_anchored_at_your_top_paper(self):
         import math
         from tastecal.taste import attention as A
         rows = [{"id": i, "m": {"cumulative": v, "scale": "log", "rel": 1.0}}
                 for i, v in (("a", 0.0), ("b", 3.0), ("c", 10.0), ("d", 30.0), ("e", 1000.0))]
-        pos = A.position(rows, "cumulative", {r["id"]: .5 for r in rows}, anchors=[20000.0], top=19000.0)
-        self.assertAlmostEqual(pos["c"]["x"], 0.5, places=3)          # the median of these papers: the middle
-        sc = A.scale(rows, "cumulative", top=19000.0)
-        q = A.quantile(sorted(math.log1p(v) for v in (0, 3, 10, 30, 1000)), 0.25)
-        self.assertAlmostEqual(sc["low"], (math.log1p(10) - q) / 0.6745, places=6)   # below: these papers' own spread
-        self.assertAlmostEqual(A.place(19000.0, sc), 0.5 * (1 + math.erf(3 / math.sqrt(2))), places=6)   # the landmark: +3 sigma
-        self.assertGreater(pos["a"]["x"], 0.05)                       # no citation is not pressed against 0
+        pos = A.position(rows, "cumulative", {r["id"]: .5 for r in rows}, top=(300.0, 0.9))
+        self.assertEqual(pos["a"]["x"], 0.0)                          # no citation: 0
+        self.assertAlmostEqual(pos["c"]["x"], 0.9 * math.log1p(10) / math.log1p(300), places=3)   # log, not the count
+        self.assertEqual(pos["e"]["x"], 1.0)                          # past your top paper: up to 1, no further
+        sc = A.scale(rows, "cumulative", top=(300.0, 0.9))
+        self.assertAlmostEqual(A.place(300.0, sc), 0.9, places=6)     # your top paper sits at your score of it: on y = x
+        self.assertAlmostEqual(A.count_at(0.9, sc), 300.0, places=3)
+        self.assertEqual(sc["median"], 10.0)
         self.assertLess(pos["a"]["x"], pos["b"]["x"])
         self.assertLess(pos["d"]["x"], pos["e"]["x"])
-        self.assertLess(pos["e"]["x"], 0.999)                         # nothing of the field reaches the landmark
-        sc2 = A.scale(rows, "cumulative", anchors=[20000.0])          # no landmark looked up: the most cited known
-        self.assertEqual(sc2["top"], 20000.0)
+        sc1 = A.scale(rows, "cumulative", top=19000.0)                # a bare count (the landmark): at 1
+        self.assertAlmostEqual(A.place(19000.0, sc1), 1.0, places=6)
+        self.assertLess(A.place(1000.0, sc1), 0.999)                  # nothing of the field reaches the landmark
+        sc2 = A.scale(rows, "cumulative", anchors=[20000.0])          # no landmark looked up: the most attended known
+        self.assertEqual((sc2["top"], sc2["x_top"]), (20000.0, 1.0))
 
     def test_every_count_comes_in_the_same_order(self):
         from tastecal.taste import attention as A
@@ -666,7 +669,7 @@ class RefitTest(unittest.TestCase):
         def wider(rows, metric, anchors=(), top=None):               # any change of scale goes through refit
             sc = saved(rows, metric, anchors, top)
             if sc:
-                sc["low"] *= 2
+                sc["x_top"] *= 0.5
             return sc
         A.scale = wider
         try:
@@ -939,10 +942,13 @@ class TowardLineTest(unittest.TestCase):
         def rows(vals, rel=1.0):
             return [{"id": str(i), "m": {"cumulative": v, "scale": "log", "rel": rel}} for i, v in enumerate(vals)]
         sc = A.scale(rows([0, 0, 0, 0, 0, 2, 5]), "cumulative", top=19000.0)
-        self.assertEqual(sc["median"], 2.0)                           # most not cited yet: the least-cited cited paper
-        self.assertLess(A.place(0.0, sc), 0.5)                        # no citation stays below the middle
-        self.assertEqual(A.scale(rows([3, 3, 3, 3]), "cumulative", top=19000.0)["median"], 3.0)   # ties: no division by 0
-        self.assertEqual(A.scale(rows([10, 20, 30, 40]), "cumulative", top=5.0)["top"], 40.0)   # a landmark below the middle is ignored
+        self.assertEqual(sc["median"], 0.0)                           # most not cited yet
+        self.assertEqual(A.place(0.0, sc), 0.0)
+        self.assertEqual(A.scale(rows([3, 3, 3, 3]), "cumulative", top=19000.0)["median"], 3.0)   # ties
+        self.assertEqual(A.scale(rows([10, 20, 30, 40]), "cumulative", top=5.0)["top"], 40.0)   # a landmark below the papers: the most attended at 1
+        tiny = A.scale(rows([0, 2]), "cumulative", top=(0.2, 0.8))   # a top paper under one citation a year
+        self.assertEqual(tiny["top"], 1.0)                            # the log is never taken of less than one
+        self.assertEqual(A.scale(rows([0, 2]), "cumulative", top=(50.0, 0.01))["x_top"], 0.05)   # nor squeezed to 0
         pos = A.position(rows([0, 3, 30], rel=0.1), "cumulative", {"0": .5, "1": .5, "2": .5}, top=19000.0)
         self.assertGreater(pos["0"]["hi"], pos["0"]["x"])             # a paper with no citation yet still has a bar
 
@@ -1038,9 +1044,88 @@ class TowardLineTest(unittest.TestCase):
         self.assertAlmostEqual(pos, round(A.place(r["m"]["cumulative"], A.scale([{"m": m["m"]} for m in res["map"]],
                                                                                 "cumulative", top=top)), 3), places=3)
         self.assertLess(pos, 0.99)                                     # the map's most cited paper is below the landmark
-        xs = sorted(p["x"] for p in res["views"]["cumulative"]["pos"].values())
-        self.assertAlmostEqual(xs[len(xs) // 2], 0.5, delta=0.05)      # the typical paper in the middle
+        self.assertAlmostEqual(pos, round(math.log1p(r["m"]["cumulative"]) / math.log1p(top), 3), places=3)   # at 1
         self.assertNotIn("m1", res["views"]["cumulative"]["pos"])       # no citation count: no attention, not fitted
+
+    def test_attention_is_anchored_at_the_paper_you_rated_highest(self):
+        import math
+        from tastecal.taste import attention as A
+        g = field_graph()
+        for n in g["nodes"]:                                           # your rated papers have counts too
+            if n["id"].startswith("n"):
+                n["citations"] = {"n1": 300, "n2": 900, "n7": 40}.get(n["id"], 60)
+        raw = {"cited_by": 200000, "by_year": {}, "pub": "2017-06-12"}
+        res = axes.run(FieldScripted(), g, RATED, anchor=raw)
+        top = max(res["rated"], key=lambda r: r["yours"])
+        self.assertEqual(res["attention_anchor"]["cumulative"], "Paper n1 Title Words")   # not the landmark
+        sc = res["attention_scale"]["cumulative"]
+        self.assertAlmostEqual(sc["top"], top["m"]["cumulative"], places=2)
+        self.assertAlmostEqual(sc["x_top"], top["yours"], places=3)   # at your score: on y = x
+        self.assertAlmostEqual(A.place(sc["mid"], dict(sc, L=math.log1p(sc["top"]))), axes.QUAD, places=2)
+        r = next(r for r in res["map"] if r["id"] == "a4")
+        self.assertAlmostEqual(res["views"]["cumulative"]["pos"]["a4"]["x"],
+                               min(1.0, round(top["yours"] * math.log1p(r["m"]["cumulative"]) / math.log1p(sc["top"]), 3)),
+                               places=3)
+
+
+class QuadrantTest(unittest.TestCase):
+    def test_four_squares_at_the_cross_and_clearly_off_apart(self):
+        from tastecal.report import axes_view as AV
+        self.assertEqual([AV.zone_of(p, x) for p, x in ((.7, .2), (.7, .8), (.3, .8), (.3, .2), (.5, .5))],
+                         ["gem", "good", "hyped", "junk", "good"])
+        vw = {"gem": ["a"], "hyped": ["b"]}
+        self.assertEqual([AV.off_of(i, vw) for i in "abc"], ["up", "down", ""])
+        self.assertEqual([AV.fmt_count(v) for v in (0, 3.24, 41.6, 980, 1247.7, 13445)], ["0", "3.2", "42", "980", "1.2k", "13k"])
+
+    def test_the_chart_and_the_card(self):
+        import math
+        from tastecal.report import axes_view as AV
+        g = field_graph()
+        res = axes.run(FieldScripted(), g, RATED, anchor={"cited_by": 200000, "by_year": {}, "pub": "2017-06-12"})
+        res["map"][0]["abstract"] = "A short abstract about reusable setups."
+        html = page(res, "en")
+        for cls in ("q-quad gem", "q-quad good", "q-quad hyped", "q-quad junk", "q-band", "q-pill gem", "ax-c mid"):
+            self.assertIn(cls, html)
+        self.assertNotIn("q-zone", html)                               # the corners beyond y = x are no longer shaded
+        self.assertIn("field attention (citations a year, log scale)", html)
+        sc = res["attention_scale"]["cumulative"]
+        self.assertEqual([t for t, _ in sc["ticks"]][:2], [0.0, round(math.log1p(1) / math.log1p(sc["top"]), 4)])
+        pos = res["views"]["cumulative"]["pos"]
+        n = {z: sum(1 for r in res["map"] if r["id"] in pos and AV.zone_of(r["pred"], pos[r["id"]]["x"]) == z)
+             for z in ("gem", "good", "hyped", "junk")}
+        self.assertEqual(sum(n.values()), len(pos))                    # every paper in one square: no "middle"
+        for z, k in n.items():
+            self.assertIn(f'data-zone="{z}" aria-pressed="false" style="--c:', html)
+            self.assertRegex(html, rf'class="q-pill {z}">.*?<tspan class="n" dx="6">{k}</tspan>')
+        data = json.loads(re.search(r'<script type="application/json" id="fit-data">(.*?)</script>', html, re.S).group(1))
+        self.assertEqual(data["papers"][res["map"][0]["id"]]["abstract"], "A short abstract about reusable setups.")
+        self.assertIn("r_save", data["i18n"])
+        self.assertIn("opts.rate.save(", html)                         # the score box, only when the report passes opts.rate
+        self.assertIn("is 1 and no citation is 0", html)              # none of your rated papers has a count: the landmark
+
+    def test_abstracts_are_looked_up_once(self):
+        from tastecal.core.model import Item
+        res = {"map": [{"id": "a", "title": "Alpha Work", "pred": .5}, {"id": "random-1", "title": "Drawn Paper Title", "pred": .4},
+                       {"id": "c", "title": "Gamma", "pred": .4, "abstract": ""}],
+               "rated": [{"key": "R1", "title": "Rated One", "node": "n1", "yours": .7}]}
+        graph_ = {"nodes": [{"id": "a", "ids": {"s2": "S2A"}}, {"id": "n1", "abstract": "From the map."}]}
+
+        class S2:
+            asked = []
+
+            def by_id(self, pid):
+                self.asked.append(pid)
+                return Item(id="s2:a", title="Alpha Work", abstract="Alpha abstract.")
+
+            def match_title(self, t):
+                self.asked.append(t)
+                return Item(id="s2:r", title="Drawn Paper Title", abstract="Drawn abstract.")
+        s2 = S2()
+        self.assertEqual(axes.fill_abstracts(res, graph_, s2), 2)
+        self.assertEqual([r["abstract"] for r in res["map"]], ["Alpha abstract.", "Drawn abstract.", ""])
+        self.assertEqual(res["rated"][0]["abstract"], "From the map.")
+        self.assertEqual(s2.asked, ["S2A", "Drawn Paper Title"])     # "" means looked up before: not asked again
+        self.assertEqual(axes.fill_abstracts(res, graph_, s2), 0)
 
 
 class RunTest(unittest.TestCase):
@@ -1147,7 +1232,7 @@ class RunTest(unittest.TestCase):
         os.remove(hp)
         L.make_llm = lambda cfg, http=None: self.fail("--redraw calls no model")
         try:
-            self.assertEqual(cli.main(["fit", gp, "--redraw"]), 0)
+            self.assertEqual(cli.main(["fit", gp, "--redraw", "--no-attention"]), 0)   # no lookup in a test
         finally:
             L.make_llm = saved
         with open(hp, encoding="utf-8") as f:

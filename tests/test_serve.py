@@ -222,6 +222,14 @@ if sys.argv[1:] == ["login"]:
         self.assertIn("- ResNet (my score 0.90)", md)
         self.assertNotIn("opens a new field", md)
         self.assertEqual(self.srv.RequestHandlerClass.runner.taste_name("runs", res["id"]), "mine")
+        self.assertEqual(self.srv.RequestHandlerClass.runner.rating_target("runs", res["id"]), ("profile", "mine"))
+        # a run made from a ratings file in the folder: scores from its report go back to that file
+        code, res = self.post("/api/runs", {"seed": "x", "provider": "openai", "key": "k", "budget": 10,
+                                            "taste_file": "ratings-cv.json", "papers": [{"ref": "ResNet", "score": 0.9}]})
+        self.assertEqual(self.srv.RequestHandlerClass.runner.rating_target("runs", res["id"]), ("file", "ratings-cv.json"))
+        code, res = self.post("/api/runs", {"seed": "x", "provider": "openai", "key": "k", "budget": 10,
+                                            "taste_file": "../secrets.json", "papers": [{"ref": "ResNet", "score": 0.9}]})
+        self.assertEqual(self.srv.RequestHandlerClass.runner.rating_target("runs", res["id"]), ("file", "ratings.json"))
 
     def test_ratings_files_in_the_folder_load_directly(self):
         rows = [{"paper": f"Paper {i}", "score": i / 10, "reason": "r"} for i in range(1, 12)]

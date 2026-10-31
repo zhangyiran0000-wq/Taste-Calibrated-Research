@@ -60,6 +60,29 @@ def resolve_plan(a: argparse.Namespace) -> dict:
     return preset
 
 
+def _abstracts_once(res: dict, graph: dict, jpath: str) -> None:
+    """A result from before 2026-10-31 has no abstracts for the paper cards: looked up once (Semantic Scholar, cached)
+    and saved into taste_fit.json, so the next redraw needs no lookup."""
+    from tastecal.taste.axes import enrich, fill_abstracts
+    enrich(res, graph)
+    rows = [r for r in (res.get("map") or []) + (res.get("rated") or []) if r.get("abstract") is None]
+    if not rows:
+        return
+    from tastecal.core.http import Http
+    from tastecal.sources.semantic_scholar import SemanticScholar
+    cfg0 = Config()
+    http = Http(cfg0.cache_dir, min_interval=S2_SPACING, fresh_days=cfg0.fresh_days, meta_days=cfg0.meta_days)
+    http.fail_fast["api.semanticscholar.org"] = 2                # a card without its abstract is not worth a long wait
+    print(f"Looking up the abstracts of {len(rows)} papers for the paper cards (once; Semantic Scholar)...")
+    try:
+        fill_abstracts(res, graph, SemanticScholar(http, cfg0.s2_api_key, cfg0.max_citations_scan, cfg0.popularity_weight))
+    except Exception as e:  # the page is drawn without them
+        print(f"Abstracts not looked up: {e}")
+        return
+    with open(jpath, "w", encoding="utf-8") as f:
+        json.dump(res, f, ensure_ascii=False, indent=2)
+
+
 def _setup_logging(verbose: bool, logfile: str = "") -> None:
     handlers = [logging.StreamHandler(sys.stderr)]
     if logfile:
@@ -479,6 +502,8 @@ def cmd_fit(a: argparse.Namespace) -> int:
             print(f"Trust in the result: ±{cf.get('rms', 0):.2f}. Wrote {jpath}")
         else:
             enrich(res, graph)
+        if not getattr(a, "no_attention", False):
+            _abstracts_once(res, graph, jpath)
         with open(hpath, "w", encoding="utf-8") as f:
             f.write(page(res, (graph.get("meta") or {}).get("language", "en")))
         rpath = write_report(graph, os.path.join(out, "report.html"), taste=res)
@@ -557,7 +582,7 @@ def cmd_fit(a: argparse.Namespace) -> int:
             log.info("looking up how much the field attends to %d papers (OpenAlex, Semantic Scholar)", len(nodes))
             oa = OpenAlex(http, cfg.openalex_mailto)
             attention = fetch(nodes, oa, s2)
-            # the top of the attention scale (+3 sigma; no citation is -3 sigma), the same paper in every run
+            # the landmark, the same paper in every run: the scale's 1 when none of your rated papers has a count
             anchor = fetch([ANCHOR_NODE], oa, s2).get(ANCHOR_NODE["id"]) or None
             if not ((anchor or {}).get("cited_by") or (anchor or {}).get("s2_cites")):
                 log.warning("%s could not be looked up; the most cited paper known takes its place", ANCHOR_TITLE)
@@ -991,7 +1016,7 @@ def main(argv=None) -> int:
                     "taste_clauses.json; personal, kept out of git)")
     ft.add_argument("--fresh", action="store_true", help="start from the general clauses, not from the saved ones")
     ft.add_argument("--no-attention", action="store_true", help="do not look up citations (OpenAlex, Semantic Scholar); "
-                    "use the run's own attention percentile only")
+                    "use the run's own attention percentile only. With --redraw or --refit: no abstract lookup either")
     ft.add_argument("--provider", choices=PROVIDERS, default=None, help=PROVIDER_HELP)
     ft.add_argument("--model")
     ft.add_argument("--effort", choices=EFFORTS, help=EFFORT_HELP)

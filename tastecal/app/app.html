@@ -337,6 +337,7 @@ const ROUTE = {claude: {key: "anthropic", login: "claude-cli"}, gpt: {key: "open
 const LOGIN_LABEL = {claude: "Claude Code login", gpt: "ChatGPT login"};
 let S = {providers: null, profiles: [], runs: [], family: "claude", via: {claude: "login", gpt: "login"}, lang: "en", open: new Set(), timer: null,
          loaded: null,     // {key, title}: the saved taste last loaded or saved here; the run is made under its name
+         file: "",         // or the ratings file in the project folder last loaded: scores from the report go back to it
          files: []};       // ratings files in the project folder (ratings*.json …), loadable directly
 // What to write as a rated paper, shown while the list is empty: in the report's language, never sent.
 const EXAMPLES = {
@@ -605,7 +606,7 @@ function reuse(r) {
   $("#budget").value = q.budget || 30; showBudget();
   S.lang = q.language || "en"; setSeg("#lang", S.lang);
   $("#must").value = (q.must || []).join("\n");
-  S.loaded = q.taste_name ? {key: q.taste_key || "", title: q.taste_name} : null; showLoaded();
+  S.loaded = q.taste_name ? {key: q.taste_key || "", title: q.taste_name} : null; S.file = S.loaded ? "" : (q.taste_file || ""); showLoaded();
   $("#papers").innerHTML = ""; (q.papers || []).forEach(addPaper); syncHead();
   summarize(); window.scrollTo({top: 0, behavior: "smooth"}); toast("Settings loaded");
 }
@@ -621,7 +622,7 @@ async function post(url, body) {
   if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
   return data;
 }
-const PAGE_API = 10;         // must match API_VERSION in serve.py
+const PAGE_API = 11;         // must match API_VERSION in serve.py
 function toast(t, bad) {
   const el = $("#toast"); el.textContent = t; el.hidden = false; el.classList.toggle("err", !!bad);
   clearTimeout(el._t); el._t = setTimeout(() => (el.hidden = true), bad ? 8000 : 2800);
@@ -633,7 +634,7 @@ $("#form").addEventListener("submit", async (e) => {
   $("#go").disabled = true;
   try {
     const body = {seed: $("#seed").value, scope: $("#scope").value, must: musts(), provider: provider(), plan: $("#plan").value, model: $("#model").value, effort: $("#effort").value, key: $("#key").value,
-                  budget: Number($("#budget").value), language: S.lang, taste_name: S.loaded ? S.loaded.title : "", taste_key: S.loaded ? S.loaded.key : "", papers: papers()};
+                  budget: Number($("#budget").value), language: S.lang, taste_name: S.loaded ? S.loaded.title : "", taste_key: S.loaded ? S.loaded.key : "", taste_file: S.loaded ? "" : S.file, papers: papers()};
     const r = await post("/api/runs", body);
     $("#key").value = "";
     msg.textContent = "Started. You can follow it under Reports."; msg.className = "hint ok";
@@ -711,7 +712,7 @@ function showKeys() {
     ? `To set ${missing.length > 1 ? "them" : "it"}, run ${cmds} in PowerShell, then reload this page.`
     : `To set ${missing.length > 1 ? "them" : "it"}, run ${cmds} in the terminal, then start <code>python3 -m tastecal serve</code> again in that terminal.`;
 }
-function showLoaded() { $("#loaded").textContent = S.loaded ? `Using “${S.loaded.title}”` : ""; }
+function showLoaded() { $("#loaded").textContent = S.loaded ? `Using “${S.loaded.title}”` : S.file ? `Using ${S.file}` : ""; }
 // Loading a saved taste replaces the rated papers on the page with its own.
 $("#loadTaste").addEventListener("change", async () => {
   const v = $("#loadTaste").value; $("#loadTaste").value = "";
@@ -720,7 +721,7 @@ $("#loadTaste").addEventListener("change", async () => {
     try {
       const d = await post("/api/ratings/file", {file});
       $("#papers").innerHTML = ""; (d.papers || []).forEach(addPaper);
-      S.loaded = null; showLoaded(); syncHead(); summarize();
+      S.loaded = null; S.file = file; showLoaded(); syncHead(); summarize();
       toast(`Loaded ${(d.papers || []).length} rated papers from ${file}`);
     } catch (err) { toast(err.message, true); }
     return;
@@ -728,7 +729,7 @@ $("#loadTaste").addEventListener("change", async () => {
   const p = S.profiles.find((x) => x.name === v);
   if (!p) return;
   $("#papers").innerHTML = ""; (p.papers || []).forEach(addPaper);
-  S.loaded = {key: p.name, title: p.title || p.name}; showLoaded(); syncHead(); summarize();
+  S.loaded = {key: p.name, title: p.title || p.name}; S.file = ""; showLoaded(); syncHead(); summarize();
   toast(`Loaded ${p.title || p.name}: ${(p.papers || []).length} rated paper${(p.papers || []).length === 1 ? "" : "s"}`);
 });
 // A ratings file (as fit --rated reads it: .json, .yaml, .csv, .xlsx, or "title | score | why" lines) adds its papers.
@@ -778,7 +779,7 @@ async function saveTaste(overwrite) {
     if (r.status === 404 && d.error === "not found") { $("#stale").hidden = false; throw new Error("The app in your terminal is older than this page. Restart it (see the note at the top)."); }
     if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`);
     S.profiles = d.profiles || S.profiles; fillProfiles();
-    S.loaded = {key: d.saved, title: name}; showLoaded();
+    S.loaded = {key: d.saved, title: name}; S.file = ""; showLoaded();
     $("#saveBox").hidden = true; $("#replaceRow").hidden = true; toast(`Saved “${name}”`);
   } catch (err) { toast(err.message, true); }
 }

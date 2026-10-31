@@ -7,13 +7,11 @@ are set against. Several measures, all counts:
     influential  Semantic Scholar's influential citations a year (citations that build on the work, not a mention)
     stars        GitHub stars a year, when the audit found the work's repository
 
-A count is put on 0 to 1 through a normal distribution on the log of the count, l = log(1 + v), in two halves that
-meet at the median of the papers compared in this run (0.5). Below it, the spread is these papers' own: sigma = (m -
-q) / 0.674, q the lower quartile, so the little-cited new papers are spread out rather than pressed to 0. Above it,
-Attention Is All You Need (ANCHOR_TITLE, looked up in every run) is +3 sigma: sigma = (L - m) / 3, so the scale still
-ends at the landmark and no paper of the field looks as attended as it. x = Phi((l - m) / sigma). When the landmark
-cannot be looked up, the most attended paper known (your rated papers included) takes its place. Not linear:
-citations spread over orders of magnitude.
+A count is put on 0 to 1 on a log scale anchored at the paper you rated highest: x = s0 * log(1 + v) / log(1 + v0),
+where v0 is that paper's count and s0 your score of it, so it sits on y = x at your own score, no citation is 0, and
+a count above v0 goes past s0 (up to 1). Citations spread over orders of magnitude, so the log, not the count, is
+compared with your linear scores. When none of your rated papers has the measure, Attention Is All You Need
+(ANCHOR_TITLE, looked up in every run) is 1, else the most attended paper known.
 
 Every paper also gets a reliability: a paper months old with a handful of citations says little yet. It widens the
 paper's attention bar on the chart and lowers its weight in the fit; it never removes the paper.
@@ -28,7 +26,7 @@ log = logging.getLogger("tastecal.attention")
 
 METRICS = ("cumulative", "recent", "influential", "stars")
 FIT_METRIC = "cumulative"          # the measure the fit brings the papers towards; the others are views
-ANCHOR_TITLE = "Attention Is All You Need"     # +3 sigma of the attention scale (no citation is -3 sigma)
+ANCHOR_TITLE = "Attention Is All You Need"     # 1 on the attention scale when none of your rated papers has a count
 ANCHOR_NODE = {"id": "anchor:attention-is-all-you-need", "title": ANCHOR_TITLE, "year": 2017, "date": "2017-06",
                "ids": {"s2": "arXiv:1706.03762"}}
 
@@ -123,55 +121,52 @@ def unify(ms: List[dict], also: List[dict] = ()) -> str:
     return source
 
 
-def median_(vals: List[float]) -> float:
-    s = sorted(vals)
-    n = len(s)
-    return 0.0 if not n else (s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2)
-
-
-def _quartile(sorted_vals: List[float]) -> float:
-    """The lower quartile of an ascending list, interpolated."""
-    return quantile(sorted_vals, 0.25)
-
-
-def scale(rows: List[dict], metric: str, anchors: List[float] = (), top: Optional[float] = None) -> Optional[dict]:
-    """How a count of `metric` is put on 0 to 1 for these rows (see the module note): {"median", "top", "lo", "m", "L",
-    "low"}: the median, the top end and the count one lower sigma below the median, and on the log scale the median,
-    the top end and the lower sigma. `top` is the landmark's count (Attention Is All You
-    Need); without it, the largest count among the rows and the `anchors` (your rated papers). None when fewer than
-    two rows have the measure."""
+def scale(rows: List[dict], metric: str, anchors: List[float] = (), top=None) -> Optional[dict]:
+    """How a count of `metric` is put on 0 to 1 for these rows (see the module note): {"median", "top", "x_top", "L"}:
+    these rows' median count (for the page), the reference count and where it sits (x_top), and log(1 + top). `top`
+    is (count, x) of your highest-rated paper, or a bare count that sits at 1 (Attention Is All You Need) unless a
+    known count is larger; without one, the largest count among the rows and the `anchors` (your rated papers) sits
+    at 1. None when fewer than two rows have the measure."""
     vals = sorted(max(0.0, float(r["m"][metric])) for r in rows if (r.get("m") or {}).get(metric) is not None)
     if len(vals) < 2:
         return None
+    known = vals + [max(0.0, float(a)) for a in anchors if a is not None]
+    if isinstance(top, (tuple, list)) and top[0] and float(top[0]) > 0:
+        ref, x_top = float(top[0]), float(top[1])
+    else:                                        # a bare count sits at 1; nothing known may pass it
+        ref, x_top = max(known + [float(top) if top else 0.0]), 1.0
+    ref = max(float(ref), 1.0)                   # never a reference below one citation: the log would blow up
     half = len(vals) // 2
     med = vals[half] if len(vals) % 2 else math.expm1((math.log1p(vals[half - 1]) + math.log1p(vals[half])) / 2)
-    if med <= 0:                                 # most papers not cited yet: the middle is the least-cited paper that
-        med = min([v for v in vals if v > 0] or [0.0])   # is, so no citation stays below it
-    m = math.log1p(med)
-    ls = [math.log1p(v) for v in vals]
-    q = _quartile(ls)
-    low = (m - q) / 0.6745                       # the lower half's own spread (its quartile is 0.6745 sigma down)
-    if low <= 1e-9:                              # ties down there: the spread of all of them, else the old third
-        low = 1.4826 * median_([abs(v - m) for v in ls]) or m / 3 or 1.0
-    known = max(vals + [max(0.0, float(a)) for a in anchors if a is not None])
-    if not top or math.log1p(top) <= m:          # no landmark, or one at or below the middle (a wrong record)
-        top = known
-    L = math.log1p(top)
-    return {"median": round(math.expm1(m), 3), "top": round(top, 3), "m": m, "L": L if L > m else None,
-            "low": low, "lo": round(math.expm1(max(0.0, m - low)), 3)}
+    x_top = round(max(0.05, min(1.0, float(x_top))), 3)
+    out = {"median": round(med, 3), "top": round(ref, 3), "x_top": x_top, "L": math.log1p(ref)}
+    if ORIGIN == "median" and x_top > 0.55 and math.log1p(ref) > math.log1p(med) + 0.5:
+        out.update(origin="median", Lm=math.log1p(med))
+    return out
+
+
+ORIGIN = "zero"     # "zero": no citation is 0; "median": these papers' median is 0.5 (compared on the page, one stays)
 
 
 def place(v: float, sc: dict) -> float:
-    """A count on 0 to 1: the median at 0.5; below it the lower half's own spread, above it the top end at +3 sigma."""
-    l, m, L = math.log1p(max(0.0, v)), sc["m"], sc["L"]
-    sigma = sc["low"] if (l < m or L is None) else (L - m) / 3    # nothing above the middle to hold: the lower sigma
-    return 0.5 * (1 + math.erf(((l - m) / max(sigma, 1e-9)) / math.sqrt(2)))
+    """A count on 0 to 1: x_top * log(1 + v) / log(1 + top), at most 1 (or through the median at 0.5)."""
+    lv = math.log1p(max(0.0, v))
+    if sc.get("origin") == "median":
+        return max(0.0, min(1.0, 0.5 + (sc["x_top"] - 0.5) * (lv - sc["Lm"]) / (sc["L"] - sc["Lm"])))
+    return max(0.0, min(1.0, sc["x_top"] * lv / sc["L"]))
+
+
+def count_at(x: float, sc: dict) -> float:
+    """The count that sits at x on this scale (the inverse of place)."""
+    if sc.get("origin") == "median":
+        return max(0.0, math.expm1(sc["Lm"] + (x - 0.5) * (sc["L"] - sc["Lm"]) / (sc["x_top"] - 0.5)))
+    return math.expm1(max(0.0, x) / sc["x_top"] * sc["L"])
 
 
 def position(rows: List[dict], metric: str, scores: Dict[str, float], anchors: List[float] = (),
              top: Optional[float] = None) -> Dict[str, dict]:
-    """Each row's attention on 0 to 1. Counts through the normal scale of `scale` and `place`: the median of these
-    rows in the middle, their own spread below it, `top` (Attention Is All You Need) at +3 sigma above it. The bar: the count
+    """Each row's attention on 0 to 1. Counts through the log scale of `scale` and `place`, anchored at `top` (your
+    highest-rated paper's count and score, or Attention Is All You Need at 1). The bar: the count
     moved by the paper's unreliability (v -/+ u (v + 1), u = 1 - reliability). A measure that is not a count
     (the run's own percentile) is put on your scale by rank instead (on_scale). rows: [{"id", "m"}]; returns {id:
     {"rank", "x", "lo", "hi"}}."""

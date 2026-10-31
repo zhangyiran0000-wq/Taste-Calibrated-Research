@@ -200,6 +200,7 @@ def node_json(n) -> dict:
         "id": it.id, "title": it.title, "short": c.short if c else it.title[:30], "kind": it.kind,
         "date": it.date or (str(it.year) if it.year else ""), "year": it.year,
         "authors": it.author_line(), "venue": it.venue, "url": it.url, "citations": it.citations, "ids": dict(it.ids or {}),
+        **({"abstract": it.abstract} if it.abstract and it.kind != "web" else {}),
         "role": n.role or "improvement", "threads": n.threads, "hop": n.hop, "direction": n.direction,
         "round": n.round, **({"borrowed": True} if getattr(n, "borrowed", False) else {}),
         **({"must": True} if getattr(n, "must", False) else {}),

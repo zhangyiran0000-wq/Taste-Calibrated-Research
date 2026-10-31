@@ -196,6 +196,53 @@ def rated_profile(prefer: str = "", base: str = ".") -> str:
     return "mine"
 
 
+def _same_paper(a: str, b: str) -> bool:
+    """The same paper under two names: equal once punctuation and case are dropped, or titles that nearly match."""
+    if _norm_ref(a) == _norm_ref(b):
+        return True
+    from tastecal.core.model import title_similarity
+    return len(_norm_ref(a)) > 12 and len(_norm_ref(b)) > 12 and title_similarity(a, b) >= 0.9
+
+
+def rate_in_file(path: str, ref: str, score, comment: str = "") -> dict:
+    """Add, change or (score None) remove your rating of one paper in a ratings .json file (as `fit --rated` reads it),
+    in the file's own shape: a list or {"papers": [...]}, with the key names its entries already use ("paper" or
+    "title" or "ref"; "reason" or "comment"). The file is made, as a list, when there is none.
+    Returns {"file", "title", "rated", "papers"}."""
+    import json
+    from tastecal.taste.axes import read_entries
+    data = []
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8-sig") as f:
+            data = json.load(f)
+    holder, key = (data, None) if isinstance(data, list) else (None, next(
+        (k for k in ("papers", "rated", "ratings") if isinstance(data.get(k), list)), "papers"))
+    rows = holder if holder is not None else data.setdefault(key, [])
+    entries = [e for e in rows if isinstance(e, dict)]
+    pk = next((k for k in ("paper", "title", "ref") if any(k in e for e in entries)), "paper")
+    ck = next((k for k in ("reason", "comment") if any(k in e for e in entries)), "reason")
+    name = lambda e: str(e.get("paper") or e.get("title") or e.get("ref") or "")  # noqa: E731
+    hit = next((e for e in entries if _same_paper(name(e), ref)), None)
+    if score is None:
+        if hit is not None:
+            rows.remove(hit)
+    else:
+        score = round(max(0.0, min(1.0, float(score))), 2)
+        if hit is not None:
+            hit["score"] = score
+            if comment:
+                hit[next((k for k in ("reason", "comment") if k in hit), ck)] = comment
+        else:
+            rows.append({pk: " ".join(str(ref).split()), "score": score, ck: comment or ""})
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+    papers = read_entries(data)
+    return {"file": os.path.basename(path), "title": os.path.basename(path), "papers": papers, "rated": len(papers)}
+
+
 def rate_paper(ref: str, score, comment: str = "", profile: str = "", base: str = ".") -> dict:
     """Add, change or (score None) remove your rating of one paper in a taste.json profile.
     Returns {"profile", "title", "rated", "papers"}. The profile is created (as the default) when there is none."""
@@ -203,7 +250,7 @@ def rate_paper(ref: str, score, comment: str = "", profile: str = "", base: str 
     key = rated_profile(profile, base)
     prof = data["profiles"].setdefault(key, {"title": "Mine" if key == "mine" else key, "papers": []})
     papers = [p for p in prof.get("papers") or [] if isinstance(p, dict) and p.get("ref")]
-    hit = next((p for p in papers if _norm_ref(p["ref"]) == _norm_ref(ref)), None)
+    hit = next((p for p in papers if _same_paper(p["ref"], ref)), None)
     if score is None:
         papers = [p for p in papers if p is not hit]
     else:

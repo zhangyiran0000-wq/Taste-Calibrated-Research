@@ -339,10 +339,9 @@ footer{padding-block:48px 64px;color:var(--muted);font-size:13px}
 .sup.untested,.sup.mentions,.sup.not_cited{color:var(--muted)}
 .rate{margin-top:18px;border-top:1px solid var(--hair);padding-top:12px;display:grid;gap:8px}
 .rate h3{margin:0;border:0;padding:0}.rate p{margin:0}
-.rate-seg{display:flex;gap:6px}
-.rate-seg button{width:36px;height:32px;border-radius:8px;border:1px solid var(--hair);background:var(--surface);font:600 14px var(--f-display);color:var(--ink-2);cursor:pointer}
-.rate-seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
-.rate-why{font:14px var(--f-body);padding:7px 10px;border:1px solid var(--hair);border-radius:8px;background:var(--surface);color:var(--ink)}
+.rate-in{display:flex;gap:8px;flex-wrap:wrap}
+.rate-in input{font:14px var(--f-body);padding:7px 10px;border:1px solid var(--hair);border-radius:8px;background:var(--surface);color:var(--ink)}
+.rate-score{width:84px;font-variant-numeric:tabular-nums}.rate-why{flex:1 1 200px;min-width:0}
 .rate-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .rate-row button{font:600 13px var(--f-display);padding:6px 12px;border-radius:8px;border:1px solid var(--ink);background:var(--ink);color:var(--surface);cursor:pointer}
 .rate-row .rate-clear{background:transparent;color:var(--ink-2);border-color:var(--hair)}
@@ -595,40 +594,42 @@ const workOf = (id) => byId[id] || poolById[id];
 /* ---------- your ratings: only when this report is opened from the local tastecal page ---------- */
 const RATE = { on: /^https?:$/.test(location.protocol) && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)
   && /^\/(runs|examples)\/[^/]+\/report\.html$/.test(location.pathname), mine: {}, title: "" };
-const RATE_VAL = [null, 0.1, 0.3, 0.5, 0.7, 0.9];
 const normT = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9\u3400-\u9fff]+/g, "");
 const runOf = () => { const m = location.pathname.match(/^\/(runs|examples)\/([^/]+)\//); return m ? { group: m[1], id: decodeURIComponent(m[2]) } : { group: "", id: "" }; };
 if (RATE.on) {
   fetch(`/api/taste/ratings?group=${encodeURIComponent(runOf().group)}&run=${encodeURIComponent(runOf().id)}`)
     .then((r) => (r.ok ? r.json() : null))
-    .then((d) => { if (!d || !Array.isArray(d.papers)) { RATE.on = false; return; } RATE.title = d.title || d.profile || ""; d.papers.forEach((p) => { RATE.mine[normT(p.ref)] = p; }); })
+    .then((d) => { if (!d || !Array.isArray(d.papers)) { RATE.on = false; return; } RATE.title = d.title || ""; d.papers.forEach((p) => { RATE.mine[normT(p.ref)] = p; }); })
     .catch(() => { RATE.on = false; });
+}
+// One paper's score, saved to the list this report's ratings came from (a ratings file or a saved taste): 0 to 1
+// with two decimals and a line why, as in that list. The taste card uses the same call (rateSave).
+async function rateSave(ref, score, comment) {
+  const r = await fetch("/api/taste/rate", { method: "POST", headers: { "Content-Type": "application/json", "X-TasteCal": "1" },
+    body: JSON.stringify({ group: runOf().group, run: runOf().id, ref, score, comment }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  if (score === null) delete RATE.mine[normT(ref)]; else RATE.mine[normT(ref)] = { ref, score, comment };
+  RATE.title = d.title || RATE.title;
+  return d;
 }
 function rateBlock(n) {
   const mine = RATE.mine[normT(n.title)];
-  const cur = mine && typeof mine.score === "number" ? Math.max(1, Math.min(5, Math.round((mine.score - 0.1) / 0.2) + 1)) : 0;
-  return `<h3>Your rating</h3>
-    <p class="small">How much does this paper really contribute, in your view? 1 means nothing real, 5 means a major step. It is saved to your taste profile${RATE.title ? ` “${esc(RATE.title)}”` : ""}, and later runs calibrate on it.</p>
-    <div class="rate-seg" role="group" aria-label="Your rating">${[1, 2, 3, 4, 5].map((k) => `<button type="button" data-rate="${k}" aria-pressed="${k === cur}">${k}</button>`).join("")}</div>
-    <input class="rate-why" type="text" maxlength="300" placeholder="Why, in a line (optional)" value="${esc(mine ? mine.comment || "" : "")}">
+  const cur = mine && typeof mine.score === "number" ? mine.score.toFixed(2) : "";
+  return `<h3>Your score</h3>
+    <p class="small">0 to 1 with two decimals, and a line why, as in your ratings list. Saved to${RATE.title ? ` “${esc(RATE.title)}”` : " your ratings list"}; the next fit calibrates on it.</p>
+    <div class="rate-in"><input class="rate-score" type="number" min="0" max="1" step="0.01" inputmode="decimal" placeholder="0.00" aria-label="Your score, 0 to 1" value="${cur}"><input class="rate-why" type="text" maxlength="300" placeholder="Why, in a line" aria-label="Why, in a line" value="${esc(mine ? mine.comment || "" : "")}"></div>
     <div class="rate-row"><button type="button" class="rate-save">Save</button>${mine ? `<button type="button" class="rate-clear">Remove</button>` : ""}<span class="small rate-msg" aria-live="polite"></span></div>`;
 }
 document.addEventListener("click", async (ev) => {
-  const k = ev.target.closest(".rate [data-rate]");
-  if (k) { k.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === k))); return; }
   const act = ev.target.closest(".rate .rate-save, .rate .rate-clear"); if (!act) return;
   const box = act.closest(".rate"), n = workOf(box.getAttribute("data-node")), msg = box.querySelector(".rate-msg");
   if (!n) return;
-  const clear = act.classList.contains("rate-clear"), on = box.querySelector('[data-rate][aria-pressed="true"]');
-  if (!clear && !on) { msg.textContent = "Pick a number from 1 to 5 first."; return; }
-  const score = clear ? null : RATE_VAL[+on.getAttribute("data-rate")], comment = box.querySelector(".rate-why").value.trim();
+  const clear = act.classList.contains("rate-clear"), raw = box.querySelector(".rate-score").value.trim(), v = Number(raw);
+  if (!clear && (raw === "" || !(v >= 0 && v <= 1))) { msg.textContent = "A score from 0 to 1, such as 0.65."; return; }
+  const score = clear ? null : Math.round(v * 100) / 100, comment = box.querySelector(".rate-why").value.trim();
   try {
-    const r = await fetch("/api/taste/rate", { method: "POST", headers: { "Content-Type": "application/json", "X-TasteCal": "1" },
-      body: JSON.stringify({ group: runOf().group, run: runOf().id, ref: n.title, score, comment }) });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
-    if (clear) delete RATE.mine[normT(n.title)]; else RATE.mine[normT(n.title)] = { ref: n.title, score, comment };
-    RATE.title = d.title || RATE.title;
+    const d = await rateSave(n.title, score, comment);
     box.innerHTML = rateBlock(n);
     box.querySelector(".rate-msg").textContent = clear ? "Removed." : `Saved. “${d.title}” now has ${d.rated} rated papers.`;
   } catch (e) {
@@ -1284,7 +1285,8 @@ if (tasteHost && typeof window.tasteFit === "function") {
     const t = tasteHost.querySelector("template[shadowrootmode]");
     if (t) { root = tasteHost.attachShadow({ mode: "open" }); root.appendChild(t.content); t.remove(); }
   }
-  if (root) TF = window.tasteFit(root, { embedded: true, onTab: (k) => showTab("taste", k, true) });
+  if (root) TF = window.tasteFit(root, { embedded: true, onTab: (k) => showTab("taste", k, true),
+    rate: { on: () => RATE.on, title: () => RATE.title, mine: (ref) => RATE.mine[normT(ref)], save: rateSave } });
 }
 if (TF) {
   partsEl.hidden = false;

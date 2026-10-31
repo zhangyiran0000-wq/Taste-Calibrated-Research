@@ -13,8 +13,8 @@ and no pair you scored 0.3 apart changes order. Your scores are never judged: a 
 
 Step 2, every paper towards y = x. Every other method paper on the map of the last YEARS years, and a sample
 (RANDOM_SHARE of them) drawn at random from papers citing the map's works, is measured on the same indicators and set
-against how much the field attends to it (attention.py): citations a year on a normal scale, no citation at -3 sigma
-and Attention Is All You Need at +3 sigma. The objective is these papers' distance from y = x; your scores are the
+against how much the field attends to it (attention.py): citations a year on a log scale anchored at the paper you
+rated highest, at your score of it (Attention Is All You Need at 1 when none has a count). The objective is these papers' distance from y = x; your scores are the
 constraint: each rated paper within FIT_TOL of your score (or within step 1's miss, if that was larger) and no pair
 you scored GAP apart out of order. The scoring itself is fitted to it: a weighted sum of the levels, weights >= 0,
 starting from every clause counting the same (fit_weights). The field may also rewrite or annotate a clause or add up
@@ -108,6 +108,7 @@ def _mended(note: str) -> str:
     ends = [m.end() for m in SENTENCE_END.finditer(note)]
     return note[:ends[-1]] if ends else note
 BAND = 0.5                # off the diagonal: your rank and the field's differ by more than half the list
+QUAD = 0.5                # the four regions: taste score and attention each above or below the middle of the scale
 CJK = re.compile(r"[㐀-鿿]")
 
 
@@ -333,7 +334,7 @@ def read_rated(rated: List[dict], cfg, llm, http, source, graph: dict) -> Tuple[
             missing.append({"ref": r["ref"], "why": f"not found ({str(e)[:80]})"})
             continue
         node = {"id": f"rated-{i + 1}", "title": item.title, "short": "", "kind": "paper", "date": item.sort_date,
-                "url": item.url, "card": {}, "ref": r["ref"]}
+                "url": item.url, "card": {}, "ref": r["ref"], "abstract": item.abstract or ""}
         if not is_method(node):  # a tool, dataset, survey or benchmark by its title: listed, never scored, so not read
             done.append(node)
             continue
@@ -417,7 +418,7 @@ def read_items(items: list, cfg, llm, http, prefix: str, n: int) -> Tuple[List[d
         i, item = pair
         node = {"id": f"{prefix}-{i + 1}", "title": item.title, "short": "", "kind": "paper", "date": item.sort_date,
                 "year": item.year, "url": item.url, "card": {}, "ids": dict(item.ids), "citations": item.citations,
-                "sample": prefix}
+                "sample": prefix, "abstract": item.abstract or ""}
         ans = keeper.gate(node, item)
         if ans and ans.get("basis") == "full text":
             node["gates"] = ans
@@ -1565,9 +1566,9 @@ def run(llm, graph: dict, rated_in: List[dict], works: Optional[List[str]] = Non
         cands.append({"id": n["id"], "node": n, "notes": notes(n), "summary": notes(n, short=True)[:700],
                       "x": dict(g_["x"]), "basis": dict(g_["basis"]), "half": _half(n["id"]),
                       "m": A.measures(n, (attention or {}).get(n["id"]), as_of)})
-    # your rated papers' attention: never used for their own place (on y = x at your score). The scale's top end is
-    # Attention Is All You Need (+3 sigma; no citation is -3 sigma), looked up in every run (`anchor`, or one of your
-    # rated papers when it is that paper); without it, the most attended paper known
+    # your rated papers' attention: never used for their own place (on y = x at your score). The log scale is
+    # anchored at the paper you rated highest (at your score of it); Attention Is All You Need, looked up in every
+    # run (`anchor`, or one of your rated papers when it is that paper), only when none of yours has a count
     rated_m = {r["key"]: A.measures(by_node.get(r["node"]) or {"date": ""}, (attention or {}).get(r["node"]), as_of)
                for r in rated if r.get("node")}
     anchor_m = A.measures(A.ANCHOR_NODE, anchor, as_of) if anchor else None
@@ -1577,11 +1578,15 @@ def run(llm, graph: dict, rated_in: List[dict], works: Optional[List[str]] = Non
         anchor_m = rated_m.get(same[0]) if same else None
     att_source = (A.unify([c["m"] for c in cands], list(rated_m.values()) + ([anchor_m] if anchor_m else []))
                   if cands else "")
-    titles = {r["key"]: r["title"] for r in rated}
-    anchors, tops, top_of = _anchoring([(titles[k], m) for k, m in rated_m.items()], cands, anchor_m, att_source)
-    if cands and att_source == "citations a year" and A.FIT_METRIC not in tops:
-        log.warning("%s could not be looked up: the most cited paper known (%s) is the top of the attention scale",
-                    A.ANCHOR_TITLE, top_of.get(A.FIT_METRIC, "?"))
+    by_key = {r["key"]: r for r in rated}
+    anchors, tops, top_of = _anchoring([(by_key[k]["title"], m, by_key[k].get("yours")) for k, m in rated_m.items()],
+                                       cands, anchor_m, att_source)
+    if cands and att_source == "citations a year":
+        if A.FIT_METRIC not in tops:
+            log.warning("none of your rated papers has a citation count and %s could not be looked up: the most cited "
+                        "paper known (%s) sits at 1 on the attention scale", A.ANCHOR_TITLE, top_of.get(A.FIT_METRIC, "?"))
+        else:
+            log.info("attention scale: log of citations a year, anchored at %s", top_of.get(A.FIT_METRIC, "?"))
 
     # the field: every paper as close to y = x as your scores allow
     field = (field_phase(llm, rated, cands, inds, ev1, A.FIT_METRIC, banned, anchors=anchors, top=tops) if cands
@@ -1601,7 +1606,7 @@ def run(llm, graph: dict, rated_in: List[dict], works: Optional[List[str]] = Non
     for r in rated:                              # what the page shows of your papers: attention, venue, authors
         r["m"] = rated_m.get(r["key"])
         n_ = by_node.get(r.get("node")) or {}
-        r.update({k: n_[k] for k in ("venue", "authors", "year") if n_.get(k)})
+        r.update({k: n_[k] for k in ("venue", "authors", "year", "abstract") if n_.get(k)})
     sc = _score(rated, cands, inds, field, field.get("lam", ev1["lam"]))
     map_rows, w, b, combined = sc["map_rows"], sc["w"], sc["b"], sc["combined"]
     map_rows.sort(key=lambda r: -r["pred"])
@@ -1649,22 +1654,28 @@ def run(llm, graph: dict, rated_in: List[dict], works: Optional[List[str]] = Non
                    "older": [{"id": n["id"], "title": n.get("title", ""), "date": n.get("date", "")} for n in old]}, graph)
 
 
-def _anchoring(rated_ms: List[Tuple[str, dict]], cands: List[dict], anchor_m: Optional[dict],
-               att_source: str) -> Tuple[Dict[str, list], Dict[str, float], Dict[str, str]]:
-    """The attention scale's top end for each measure: the landmark's count (Attention Is All You Need) when known,
-    else the most attended paper known (your rated papers included). Returns (anchors: your papers' counts, tops: the
-    landmark's counts, top_of: the title at the top end, for the page)."""
+def _anchoring(rated_ms: List[tuple], cands: List[dict], anchor_m: Optional[dict],
+               att_source: str) -> Tuple[Dict[str, list], Dict[str, object], Dict[str, str]]:
+    """Where each measure's log scale is anchored: the paper you rated highest that has the measure (ties: the more
+    attended), at your score of it, so it sits on y = x; else the landmark (Attention Is All You Need) at 1; else the
+    most attended paper known, at 1. rated_ms: [(title, measures, your score)]. Returns (anchors: your papers' counts,
+    tops: {measure: (count, x) or a count that sits at 1}, top_of: the title of the anchor, for the page)."""
     from tastecal.taste import attention as A
-    anchors = {mt: [m.get(mt) for _, m in rated_ms if m.get(mt) is not None] for mt in A.METRICS}
-    tops = {mt: anchor_m.get(mt) for mt in A.METRICS if anchor_m and anchor_m.get(mt)}
-    top_of = {}
+    anchors = {mt: [m.get(mt) for _, m, *_ in rated_ms if m.get(mt) is not None] for mt in A.METRICS}
+    tops, top_of = {}, {}
     for mt in A.METRICS:
         if mt == A.FIT_METRIC and att_source != "citations a year":
-            continue                             # the run's own percentile, by rank: no top end to name
-        if mt in tops:
-            top_of[mt] = A.ANCHOR_TITLE
+            continue                             # the run's own percentile, by rank: no count to anchor
+        mine = [(y[0], float(m[mt]), t) for t, m, *y in rated_ms
+                if y and isinstance(y[0], (int, float)) and m.get(mt) is not None and float(m[mt]) > 0]
+        if mine:
+            yours, v, t = max(mine, key=lambda z: (z[0], z[1]))
+            tops[mt], top_of[mt] = (v, round(yours, 3)), t
             continue
-        pool_ = [(m.get(mt), t) for t, m in rated_ms if m.get(mt) is not None]
+        if anchor_m and anchor_m.get(mt):
+            tops[mt], top_of[mt] = anchor_m[mt], A.ANCHOR_TITLE
+            continue
+        pool_ = [(m.get(mt), t) for t, m, *_ in rated_ms if m.get(mt) is not None]
         pool_ += [(c["m"].get(mt), c["node"].get("title", "")) for c in cands if c["m"].get(mt) is not None]
         if pool_:
             top_of[mt] = max(pool_, key=lambda t: t[0])[1]
@@ -1756,19 +1767,19 @@ def _score(rated: List[dict], cands: List[dict], inds: List[dict], field: dict, 
     rated_rows = []
     for i, r in enumerate(rated):                # your scores are the constraint: shown with how well the clauses reproduce them
         contrib = sorted(((names[k], round(w[k] * X[i][k], 3)) for k in range(len(names))), key=lambda t: -t[1])
-        rated_rows.append({"key": r["key"], "title": r["title"], "node": r["node"], "yours": r["yours"],
+        rated_rows.append({"key": r["key"], "ref": r.get("ref") or "", "title": r["title"], "node": r["node"], "yours": r["yours"],
                            "comment": r.get("comment", ""), "pred": round(ev["pred"][i], 3), "fit": round(predict(X[i], w, b), 3),
                            "loo": round(loo_r[i], 3), "s": combined(X[i]), "x": r["x"], "x1": r.get("x1") or {}, "x2": r.get("x2") or {},
                            "basis": r["basis"], "contrib": contrib, "side": "", "m": r.get("m"),
                            "allowed": round(tol[i] if got is not None else FIT_TOL, 4),
-                           **{k: r[k] for k in ("venue", "authors", "year") if r.get(k)}})
+                           **{k: r[k] for k in ("venue", "authors", "year", "abstract") if r.get(k)}})
     map_rows = []
     for c, x in zip(cands, _rows_x(cands, rated, names)):
         n = c["node"]
         row = {"id": c["id"], "short": n.get("short", ""), "title": n.get("title", ""), "date": n.get("date", ""),
                "pred": round(preds[c["id"]], 3), "s": combined(x), "unsure": round(spread_of(x), 3),
                "x": c["x"], "basis": c["basis"], "sample": n.get("sample", ""), "half": c["half"],
-               "m": c["m"], "attention": c["m"].get("cumulative"),
+               "m": c["m"], "attention": c["m"].get("cumulative"), **({"abstract": n["abstract"]} if n.get("abstract") else {}),
                "att": {k: att_of(n).get(k) for k in ("citations", "citations_per_year", "lower_bound", "basis")}}
         if c.get("recheck"):
             row["recheck"] = c["recheck"]
@@ -1801,7 +1812,12 @@ def _finish(sc: dict, field: dict, inds: List[dict], anchors: Dict[str, list], t
             continue
         s_ = A.scale([{"m": r["m"]} for r in map_rows], mt, anchors.get(mt, []), tops.get(mt))
         if s_:
-            att_scale[mt] = {"median": s_["median"], "top": s_["top"], "top_title": top_of.get(mt, ""), "lo": s_["lo"]}
+            att_scale[mt] = {"median": s_["median"], "top": s_["top"], "x_top": s_["x_top"], "top_title": top_of.get(mt, ""),
+                             "mid": round(A.count_at(QUAD, s_), 1),
+                             # the counts a log axis marks (0, 1, 10, 100, ...), where they sit on 0 to 1
+                             "ticks": [[round(A.place(v, s_), 4), v] for v in (0, 1, 10, 100, 1000, 10000, 100000, 1000000)
+                                       if v <= A.count_at(1.0, s_) * 1.0001],
+                             **({"origin": "median"} if s_.get("origin") == "median" else {})}
     field_info = {k_: v for k_, v in field.items() if k_ not in ("indicators", "targets", "weights", "pos", "w_end")}
     tg, targets, wts = sc["tg"], sc["targets"], sc["wts"]
     if tg:                                       # where the papers ended up, with the scoring as used (after the re-check)
@@ -1833,7 +1849,7 @@ def refit(res: dict, graph: dict, anchor: Optional[dict] = None) -> dict:
     from tastecal.taste import attention as A
     inds = res["indicators"]
     names = [d["name"] for d in inds]
-    keep = ("key", "title", "node", "yours", "comment", "m", "venue", "authors", "year")
+    keep = ("key", "ref", "title", "node", "yours", "comment", "m", "venue", "authors", "year", "abstract")
     rated = [dict({k: r.get(k) for k in keep}, x=dict(r["x"]), x1=dict(r.get("x1") or {}), x2=dict(r.get("x2") or {}),
                   basis=dict(r.get("basis") or {})) for r in res["rated"]]
     by = {n["id"]: n for n in graph.get("nodes", [])}
@@ -1841,6 +1857,8 @@ def refit(res: dict, graph: dict, anchor: Optional[dict] = None) -> dict:
     for r in res["map"]:
         n = dict(by.get(r["id"]) or {}, id=r["id"], short=r.get("short", ""), title=r.get("title", ""),
                  date=r.get("date", ""), sample=r.get("sample", ""))
+        if r.get("abstract") is not None:        # looked up for the page (fill_abstracts): kept
+            n["abstract"] = r["abstract"]
         n["assessment"] = dict(n.get("assessment") or {}, attention=dict(att_of(n), **(r.get("att") or {})))
         cands.append({"id": r["id"], "x": dict(r["x"]), "basis": dict(r.get("basis") or {}), "node": n,
                       "half": r.get("half", _half(r["id"])), "m": _counts_again(r.get("m") or {}, r.get("att") or {}),
@@ -1850,14 +1868,14 @@ def refit(res: dict, graph: dict, anchor: Optional[dict] = None) -> dict:
             r["m"] = _counts_again(r["m"], {})
     as_of = res.get("as_of") or date.today().isoformat()
     anchor_m = A.measures(A.ANCHOR_NODE, anchor, as_of) if anchor else None
-    rated_ms = [(r["title"], r["m"]) for r in rated if r.get("m")]
+    rated_ms = [(r["title"], r["m"], r.get("yours")) for r in rated if r.get("m")]
     if anchor_m is None:                         # the landmark among your rated papers
         from tastecal.core.model import title_similarity
-        anchor_m = next((m for t, m in rated_ms if title_similarity(t, A.ANCHOR_TITLE) >= 0.9), None)
-    att_source = A.unify([c["m"] for c in cands], [m for _, m in rated_ms] + ([anchor_m] if anchor_m else [])) if cands else ""
+        anchor_m = next((m for t, m, _ in rated_ms if title_similarity(t, A.ANCHOR_TITLE) >= 0.9), None)
+    att_source = A.unify([c["m"] for c in cands], [m for _, m, _ in rated_ms] + ([anchor_m] if anchor_m else [])) if cands else ""
     anchors, tops, top_of = _anchoring(rated_ms, cands, anchor_m, att_source)
     old_scale = res.get("attention_scale") or {}
-    for mt, v in old_scale.items():              # the landmark's count this result kept, when none is given
+    for mt, v in old_scale.items():              # the landmark's count this result kept, when nothing else anchors
         if mt not in tops and v.get("top") and v.get("top_title") == A.ANCHOR_TITLE and (mt != A.FIT_METRIC or
                                                                                        att_source == "citations a year"):
             tops[mt], top_of[mt] = v["top"], A.ANCHOR_TITLE
@@ -1907,12 +1925,12 @@ def enrich(res: dict, graph: dict) -> dict:
         n = by.get(r["id"]) or {}
         r.setdefault("threads", n.get("threads") or [])
         r.setdefault("role", n.get("role") or "")
-        for k in ("venue", "authors", "year"):
+        for k in ("venue", "authors", "year", "abstract"):
             if n.get(k) and not r.get(k):
                 r[k] = n[k]
     for r in res.get("rated") or []:
         n = by.get(r.get("node")) or {}
-        for k in ("venue", "authors", "year"):
+        for k in ("venue", "authors", "year", "abstract"):
             if n.get(k) and not r.get(k):
                 r[k] = n[k]
     meta = graph.get("meta") or {}
@@ -1929,6 +1947,34 @@ def enrich(res: dict, graph: dict) -> dict:
                          if n.get("kind", "paper") == "paper" and not n.get("borrowed") and not readable(n)
                          and n["id"] not in yours and is_method(n) and recent(n, res["as_of"], years)]
     return res
+
+
+def fill_abstracts(res: dict, graph: dict, s2) -> int:
+    """The abstract of every paper on the page that has none yet (results from before 2026-10-31): from the map, else
+    looked up once on Semantic Scholar (by its id, else by its title). A paper with no abstract anywhere keeps "" so
+    it is not looked up again. Returns how many were looked up."""
+    from tastecal.core.model import title_similarity
+    by = {n["id"]: n for n in graph.get("nodes", [])}
+    rows = ([(r, r.get("id")) for r in res.get("map") or []] + [(r, r.get("node")) for r in res.get("rated") or []])
+    asked = 0
+    for r, nid in rows:
+        if r.get("abstract") is not None:
+            continue
+        n = by.get(nid) or {}
+        if n.get("abstract"):
+            r["abstract"] = n["abstract"]
+            continue
+        if s2 is None:
+            continue
+        asked += 1
+        pid = (n.get("ids") or {}).get("s2") or ("arXiv:" + n["ids"]["arxiv"] if (n.get("ids") or {}).get("arxiv") else "")
+        it = s2.by_id(pid) if pid else None
+        if it is None and r.get("title"):
+            it = s2.match_title(r["title"])
+            if it is not None and title_similarity(it.title, r["title"]) < 0.9:
+                it = None
+        r["abstract"] = ((it.abstract if it else "") or "").strip()[:4000]
+    return asked
 
 
 def att_of(node: dict) -> dict:

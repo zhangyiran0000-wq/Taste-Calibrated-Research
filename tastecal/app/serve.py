@@ -47,7 +47,7 @@ MODELS = {   # suggestions only (value, label); any model id the account support
     "codex-cli": [["gpt-6-astra", "GPT-6 Astra · most capable"], ["gpt-6.1-sol", "GPT-6.1 Sol"], ["gpt-6-luna", "GPT-6 Luna · fastest"]],
 }
 EFFORTS = ("low", "medium", "high", "xhigh", "max", "default")
-API_VERSION = 10         # bump when the page needs a new endpoint; the page warns when the server is older
+API_VERSION = 11         # bump when the page needs a new endpoint; the page warns when the server is older
 GROUPS = ("runs", "examples")
 MAX_MUST = 10            # must-read papers a run takes, besides the seed
 
@@ -105,6 +105,8 @@ def clean_request(body: dict) -> dict:
             "budget": budget, "language": lang, "taste_name": str(body.get("taste_name") or "").strip()[:60],
             # the taste.json profile it was loaded from or saved as: your ratings in a report go back to it
             "taste_key": re.sub(r"[^a-z0-9\u4e00-\u9fff-]+", "", str(body.get("taste_key") or "").lower())[:40],
+            # or the ratings file in the project folder it was loaded from (ratings*.json …): ratings go back there
+            "taste_file": (lambda n: n if RATING_FILE.match(n) else "")(os.path.basename(str(body.get("taste_file") or "").strip())),
             "papers": papers[:40]}
 
 
@@ -208,6 +210,19 @@ class Runner:
         folder = self.folder(group, rid) if rid else None
         req = _read_json(os.path.join(folder, "request.json")) if folder else None
         return str((req or {}).get("taste_key") or (req or {}).get("taste_name") or "")
+
+    def rating_target(self, group: str, rid: str) -> Tuple[str, str]:
+        """Where your scores from a report go: the list its rated papers came from. ("file", name) for a ratings
+        .json in the project folder, ("profile", key) for a saved taste in taste.json; a report with neither on
+        record (made from pasted papers, an imported file, or before 2026-10-31) writes to ratings.json."""
+        from tastecal.taste.profiles import find_key, load_store
+        folder = self.folder(group, rid) if rid else None
+        req = (_read_json(os.path.join(folder, "request.json")) if folder else None) or {}
+        f = str(req.get("taste_file") or "")
+        if f and RATING_FILE.match(f) and f.lower().endswith(".json"):
+            return "file", f
+        key = find_key(str(req.get("taste_key") or req.get("taste_name") or ""), load_store(self.base))
+        return ("profile", key) if key else ("file", "ratings.json")
 
     @staticmethod
     def default_resume_command(out: str) -> List[str]:
@@ -321,7 +336,7 @@ class Runner:
         row["billed_to"] = billed_to(path)
         if req:
             row["request"] = {k: req.get(k) for k in ("seed", "scope", "must", "provider", "plan", "model", "effort", "budget",
-                                                      "language", "taste_name", "taste_key", "papers")}
+                                                      "language", "taste_name", "taste_key", "taste_file", "papers")}
             row["effort"] = req.get("effort") or ""
         return row
 
@@ -722,14 +737,21 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/codex/status":
             return self._json(self.login.state())
         if path == "/api/taste/ratings":
-            # Your ratings, for the rating buttons in a report opened from this page.
+            # Your ratings, for the score boxes in a report opened from this page: the list the report's came from.
             from urllib.parse import parse_qs
-            from tastecal.taste.profiles import load_store, rated_profile
+            from tastecal.taste.axes import read_table
+            from tastecal.taste.profiles import load_store
             q = parse_qs(urlparse(self.path).query)
-            key = rated_profile(self.runner.taste_name((q.get("group") or ["runs"])[0], (q.get("run") or [""])[0]),
-                                self.runner.base)
-            prof = load_store(self.runner.base)["profiles"].get(key) or {}
-            return self._json({"profile": key, "title": prof.get("title") or key,
+            kind, name = self.runner.rating_target((q.get("group") or ["runs"])[0], (q.get("run") or [""])[0])
+            if kind == "file":
+                path_ = os.path.join(self.runner.base, name)
+                try:
+                    papers = read_table(path_) if os.path.exists(path_) else []
+                except (SystemExit, Exception) as e:   # unreadable: the boxes stay off rather than overwrite it
+                    return self._json({"error": f"{name} could not be read: {e}"}, 409)
+                return self._json({"target": "file", "title": name, "papers": papers})
+            prof = load_store(self.runner.base)["profiles"].get(name) or {}
+            return self._json({"target": "profile", "profile": name, "title": prof.get("title") or name,
                                "papers": [p for p in prof.get("papers") or [] if isinstance(p, dict)]})
         m = re.fullmatch(r"/api/(runs|examples)/([^/]+)/log", path)
         if m:
@@ -832,10 +854,17 @@ class Handler(BaseHTTPRequestHandler):
                 score = None if score in (None, "") else float(score)
             except (TypeError, ValueError):
                 return self._json({"error": "A score from 0 to 1."}, 400)
-            res = rate_paper(ref, score, str(body.get("comment") or "").strip()[:400],
-                             self.runner.taste_name(str(body.get("group") or "runs"), str(body.get("run") or "")),
-                             self.runner.base)
-            return self._json({k: res[k] for k in ("profile", "title", "rated")})
+            comment = " ".join(str(body.get("comment") or "").split())[:400]
+            kind, name = self.runner.rating_target(str(body.get("group") or "runs"), str(body.get("run") or ""))
+            try:
+                if kind == "file":
+                    from tastecal.taste.profiles import rate_in_file
+                    res = rate_in_file(os.path.join(self.runner.base, name), ref, score, comment)
+                else:
+                    res = rate_paper(ref, score, comment, name, self.runner.base)
+            except (OSError, ValueError) as e:        # e.g. the file is not JSON we can read: never overwritten
+                return self._json({"error": f"{name}: {e}"}, 409)
+            return self._json({"target": kind, "title": res["title"], "rated": res["rated"]})
         if path == "/api/codex/login":
             res = self.login.start()
             return self._json(res, 400 if res.get("error") else 200)

@@ -129,7 +129,7 @@ class StaticTest(unittest.TestCase):
             json.dump(g, f)
         with open(os.path.join(d, "taste_fit.json"), "w", encoding="utf-8") as f:
             json.dump(self.res, f)
-        self.assertEqual(cli.main(["fit", gp, "--redraw"]), 0)
+        self.assertEqual(cli.main(["fit", gp, "--redraw", "--no-attention"]), 0)   # no lookup in a test
         with open(os.path.join(d, "report.html"), encoding="utf-8") as f:
             self.assertIn('id="taste-host"', f.read())
         self.assertTrue(os.path.exists(os.path.join(d, "taste_fit.html")))
