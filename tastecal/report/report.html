@@ -179,6 +179,11 @@ main{padding-bottom:40px}
 .st.r-driver .mark{stroke-dasharray:3 2.6}
 .st text{paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round}
 .st .nm{font:700 12.5px var(--f-display);fill:var(--ink)}
+#mapsvg.vert .edge-g.xl .edge{opacity:.16} #mapsvg.vert .edge-g.xl.hl .edge{opacity:1}
+.lanelabels.vert .lrow{pointer-events:none}
+.lanelabels.vert .lane-tags{position:static;flex-wrap:wrap;gap:4px}
+.lanelabels.vert .lane-chip{white-space:normal;text-align:left;line-height:1.25;max-width:100%}
+.lanelabels.vert .force-row .ftag{position:static;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .st .dt{font:400 11px var(--f-display);fill:var(--muted)}
 .st:hover .mark,.st:focus-visible .mark{stroke-width:4.5}
 .st:focus{outline:none}
@@ -450,7 +455,9 @@ footer{padding-block:48px 64px;color:var(--muted);font-size:13px}
       </div>
       <div class="ctl-group" id="rel-toggles" aria-label="Relation types"><span class="ctl-label">Links</span></div>
       <div class="ctl-group" id="folded-ctl" hidden><span class="ctl-label">Side branches</span><div class="seg" role="group" aria-label="Side branches"><button type="button" id="f-hide" aria-pressed="true" title="Keep the side branches folded into the badge on each line">Hide</button><button type="button" id="f-show" aria-pressed="false" title="Show every side branch on the map">Show</button></div></div>
+      <div class="ctl-group"><span class="ctl-label">Layout</span><div class="seg" role="group" aria-label="Layout"><button type="button" id="o-v" aria-pressed="true" title="Time runs down the page, one column per thread">Vertical</button><button type="button" id="o-h" aria-pressed="false" title="Time runs across, one row per thread">Horizontal</button></div></div>
       <div class="ctl-group">
+        <button type="button" class="tog" id="t-names" aria-pressed="true" title="Show or hide the names of the works">Names</button>
         <button type="button" class="tog" id="t-blogs" aria-pressed="true">Blogs &amp; reports</button>
         <button type="button" class="tog" id="t-fit" aria-pressed="false" title="Shrink the map to the window width">Fit width</button>
       </div>
@@ -747,13 +754,17 @@ if (drivers.length) {
 
 /* ---------- map ---------- */
 const mapsec = $("#map"), scroller = $("#mapscroll"), inner = $("#mapinner"), svg = $("#mapsvg"), labels = $("#lanelabels"), tip = $("#tip");
-const state = { selected: null, lane: null, hidden: new Set(), blogs: true, fit: null, unfold: new Set(), allFolded: !!(GT && GT.view === "show") };  // fit: null = automatic
+const pref = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v === "1"; } catch (e) { return d; } };
+const savePref = (k, v) => { try { localStorage.setItem(k, v ? "1" : "0"); } catch (e) { /* not kept */ } };
+const state = { selected: null, lane: null, hidden: new Set(), blogs: true, fit: null, unfold: new Set(), allFolded: !!(GT && GT.view === "show"),  // fit: null = automatic
+  vertical: pref("tc-map-vertical", true), names: pref("tc-map-names", true) };   // time down the page; the works' names
 let L = null, scale = 1, spacer = 0;  // spacer: extra scroll room while the drawer covers the right side
 $("#map-hint").textContent = `Each coloured line is a problem thread and each station a work, placed by date. ${seed.short}, the seed, is the interchange every line passes through. Links run from earlier to later work. Hover a station for a summary, click it for the full card.`;
 
 $("#folded-ctl").hidden = !nodes.some(isBranch);
 if (nodes.some(isBranch)) $("#map-hint").textContent += " Side branches (applications, parallel routes and explanations off the main chain) are folded into the “+N side branches” badge on their line.";
 const AXIS_H = 58, FORCE_H = 28, LANE_H = 124, RAIL = 74, PAD_L = 30, PAD_R = 60;
+const V_HEAD = 104, V_GUT = 58, V_GAP = 14, V_PAD_B = 40, SLOT_V = 46;   // the vertical map: time runs down
 const ym = (n) => { const p = String(n.date || "").split("-"); return { y: parseInt(p[0], 10) || n.year || y0, m: p[1] ? parseInt(p[1], 10) : 6 }; };
 const visible = (n) => !!n && (state.blogs || n.kind === "paper" || n === seed) && (!isBranch(n) || state.allFolded || state.unfold.has(primary(n)));
 const radius = (n) => (n.kind !== "paper" ? 8 : n.role === "turning-point" ? 10 : 7.5);
@@ -800,20 +811,81 @@ function layout(slot) {
   return { W, H, slot, cols, pos, seedX, seedLanes, laneTop, groupTop, railY };
 }
 
+// Time down the page: one column per thread, grouped by force; a station's name beside it, one line.
+function layoutV(laneW) {
+  const slot = SLOT_V;
+  let x = V_GUT; const laneLeft = {}; const groupLeft = [];
+  laneGroups.forEach((g, gi) => { if (gi) x += V_GAP; groupLeft.push({ g, x, w: g.threads.length * laneW }); g.threads.forEach((t) => { laneLeft[t.id] = x; x += laneW; }); });
+  const W = x + 10;
+  const railX = (tid) => (laneLeft[tid] !== undefined ? laneLeft[tid] : laneLeft[laneOrder[0]]) + 22;
+  const S = ym(seed);
+  const part = (n) => { const t = ym(n); if (t.y !== S.y) return "all"; if (t.m < S.m) return "before"; if (t.m > S.m) return "after"; return (n.hop || 0) < 0 ? "before" : "after"; };
+  const bucket = {};
+  nodes.forEach((n) => { if (n === seed || !visible(n)) return; const k = `${ym(n).y}|${primary(n)}|${part(n)}`; (bucket[k] = bucket[k] || []).push(n); });
+  const maxCount = (yr, p) => Math.max(0, ...laneOrder.map((l) => (bucket[`${yr}|${l}|${p}`] || []).length));
+  const seedSlot = slot * 1.9;          // the interchange and its label
+  const cols = []; let y = V_HEAD;
+  for (let yr = y0; yr <= y1; yr++) {
+    if (yr === S.y) { const b = maxCount(yr, "before"), a = maxCount(yr, "after"); const h = (b + a) * slot + seedSlot; cols.push({ yr, y, h, b, a }); y += h; }
+    else { const c = maxCount(yr, "all"); const h = c ? c * slot : slot * 0.42; cols.push({ yr, y, h, empty: !c }); y += h; }
+  }
+  const H = y + V_PAD_B;
+  const pos = {};
+  const place = (list, a, b, mA, mB) => {
+    if (!list || !list.length) return;
+    list.sort((p, q) => (p.date || "").localeCompare(q.date || "") || p.id.localeCompare(q.id));
+    const k = list.length;
+    const ys = list.map((n) => { const m = Math.min(Math.max(ym(n).m, mA), mB); return a + ((m - mA + 0.5) / (mB - mA + 1)) * (b - a); });
+    for (let i = 0; i < k; i++) ys[i] = Math.max(ys[i], i ? ys[i - 1] + slot : a + slot / 2);
+    for (let i = k - 1; i >= 0; i--) ys[i] = Math.min(ys[i], i < k - 1 ? ys[i + 1] - slot : b - slot / 2);
+    for (let i = 0; i < k; i++) ys[i] = Math.max(ys[i], a + slot / 2);
+    list.forEach((n, i) => { pos[n.id] = { x: railX(primary(n)), y: ys[i] }; });
+  };
+  let seedY = V_HEAD + seedSlot * 0.62;
+  cols.forEach((c) => {
+    if (c.yr === S.y) {
+      seedY = c.y + c.b * slot + seedSlot * 0.62;
+      laneOrder.forEach((l) => {
+        place(bucket[`${c.yr}|${l}|before`], c.y, c.y + c.b * slot, 1, S.m);
+        place(bucket[`${c.yr}|${l}|after`], c.y + c.b * slot + seedSlot, c.y + c.h, S.m, 12);
+      });
+    } else laneOrder.forEach((l) => place(bucket[`${c.yr}|${l}|all`], c.y, c.y + c.h, 1, 12));
+  });
+  let seedLanes = laneOrder.filter((l) => (seed.threads || []).includes(l));
+  if (!seedLanes.length) seedLanes = [primary(seed)];
+  return { vertical: true, W, H, slot, laneW, cols, pos, seedY, seedX: railX(seedLanes[0]), seedLanes, laneLeft, groupLeft, railX };
+}
+
 function seedPoint(lane) {
   let l = lane;
   if (!L.seedLanes.includes(l)) {
     const idx = laneOrder.indexOf(lane);
     l = L.seedLanes.reduce((best, s) => (Math.abs(laneOrder.indexOf(s) - idx) < Math.abs(laneOrder.indexOf(best) - idx) ? s : best), L.seedLanes[0]);
   }
-  return { x: L.seedX, y: L.railY(l), r: 9 };
+  return L.vertical ? { x: L.railX(l), y: L.seedY, r: 9 } : { x: L.seedX, y: L.railY(l), r: 9 };
 }
 function point(id, otherId) {
   if (id === seed.id) return seedPoint(primary(byId[otherId]) || L.seedLanes[0]);
   const n = byId[id], p = L.pos[id];
   return p ? { x: p.x, y: p.y, r: radius(n) } : null;
 }
+function pathForV(a, b) {    // time runs down: the same thread bows left of its rail, other threads in an S
+  const dx = b.x - a.x, dy = b.y - a.y, dir = dy >= 0 ? 1 : -1;
+  const f = (v) => v.toFixed(1);
+  if (Math.abs(dx) < 1) {
+    const h = Math.min(20, 9 + Math.sqrt(Math.abs(dy)) * 0.9);
+    const sx = a.x - a.r * 0.85, sy = a.y + dir * a.r * 0.55, ex = b.x - b.r - 2.5, ey = b.y - dir * b.r * 0.55;
+    return `M${f(sx)},${f(sy)} C${f(a.x - h)},${f(sy + dy * 0.1)} ${f(b.x - h)},${f(ey - dy * 0.1)} ${f(ex)},${f(ey)}`;
+  }
+  if (Math.abs(dy) < 40) {
+    const sg = dx > 0 ? 1 : -1, bow = -Math.min(34, 16 + Math.abs(dx) * 0.06);
+    return `M${f(a.x + sg * a.r * 0.6)},${f(a.y - a.r * 0.8)} C${f(a.x + dx * 0.3)},${f(a.y + bow)} ${f(b.x - dx * 0.3)},${f(b.y + bow)} ${f(b.x - sg * b.r * 0.6)},${f(b.y - b.r - 2.5)}`;
+  }
+  const sy = a.y + dir * a.r, ey = b.y - dir * (b.r + 3);
+  return `M${f(a.x)},${f(sy)} C${f(a.x)},${f(a.y + dy * 0.5)} ${f(b.x)},${f(b.y - dy * 0.5)} ${f(b.x)},${f(ey)}`;
+}
 function pathFor(a, b) {
+  if (L.vertical) return pathForV(a, b);
   const dx = b.x - a.x, dy = b.y - a.y, dir = dx >= 0 ? 1 : -1;
   if (Math.abs(dy) < 1) {
     const h = Math.min(RAIL - 14, 12 + Math.sqrt(Math.abs(dx)) * 1.7);
@@ -840,14 +912,21 @@ const wrapText = (s, max) => {
 function draw() {
   mapStale = !scroller.clientWidth;     // drawn while its tab is hidden: drawn again for its real width when shown
   const cw = scroller.clientWidth || 1000;
-  const BASE = 96;
-  const probe = layout(BASE);
-  const pads = PAD_L + PAD_R;
-  let slot = BASE;
-  if (probe.W < cw) slot = Math.min(150, BASE * (cw - pads) / (probe.W - pads));
-  L = layout(slot);
+  svg.classList.toggle("vert", state.vertical); labels.classList.toggle("vert", state.vertical);
+  svg.classList.toggle("nonames", !state.names);
+  if (state.vertical) {
+    const gaps = V_GAP * Math.max(0, laneGroups.length - 1);
+    L = layoutV(Math.max(132, Math.min(210, Math.floor((cw - V_GUT - 10 - gaps) / Math.max(1, laneOrder.length)))));
+  } else {
+    const BASE = 96;
+    const probe = layout(BASE);
+    const pads = PAD_L + PAD_R;
+    let slot = BASE;
+    if (probe.W < cw) slot = Math.min(150, BASE * (cw - pads) / (probe.W - pads));
+    L = layout(slot);
+  }
   const fitScale = cw / L.W;
-  const fit = state.fit === null ? (fitScale < 1 && fitScale >= 0.8) : state.fit;
+  const fit = state.fit === null ? (fitScale < 1 && fitScale >= (state.vertical ? 0.7 : 0.8)) : state.fit;
   scale = fit && L.W > cw ? fitScale : 1;
   $("#t-fit").setAttribute("aria-pressed", String(fit && L.W > cw));
   $("#t-fit").hidden = L.W <= cw;
@@ -867,15 +946,31 @@ function draw() {
   mk("mk-dot", 8, 8, 4, 4, `<circle class="mk" cx="4" cy="4" r="2.8"/>`);
 
   const gAxis = el("g", {}, svg);
-  L.cols.forEach((c) => {
-    el("line", { x1: c.x, x2: c.x, y1: 30, y2: L.H, class: "yr-line" }, gAxis);
-    const t = el("text", { x: c.x + 8, y: 20, class: "yr-label" }, gAxis); t.textContent = c.yr;
-  });
-  laneOrder.forEach((l, i) => { if (i) el("line", { x1: 0, x2: L.W, y1: L.laneTop[l], y2: L.laneTop[l], class: "lane-sep" }, gAxis); });
+  if (L.vertical) {
+    L.cols.forEach((c) => {
+      el("line", { x1: V_GUT - 50, x2: L.W, y1: c.y, y2: c.y, class: "yr-line" }, gAxis);
+      const t = el("text", { x: 10, y: c.y + 15, class: "yr-label" }, gAxis); t.textContent = c.yr;
+    });
+    laneOrder.forEach((l, i) => { if (i) el("line", { x1: L.laneLeft[l], x2: L.laneLeft[l], y1: V_HEAD - 8, y2: L.H, class: "lane-sep" }, gAxis); });
+  } else {
+    L.cols.forEach((c) => {
+      el("line", { x1: c.x, x2: c.x, y1: 30, y2: L.H, class: "yr-line" }, gAxis);
+      const t = el("text", { x: c.x + 8, y: 20, class: "yr-label" }, gAxis); t.textContent = c.yr;
+    });
+    laneOrder.forEach((l, i) => { if (i) el("line", { x1: 0, x2: L.W, y1: L.laneTop[l], y2: L.laneTop[l], class: "lane-sep" }, gAxis); });
+  }
 
   const gRails = el("g", {}, svg);
   laneOrder.forEach((l) => {
-    const xs = nodes.filter((n) => n !== seed && visible(n) && primary(n) === l && L.pos[n.id]).map((n) => L.pos[n.id].x);
+    const on = nodes.filter((n) => n !== seed && visible(n) && primary(n) === l && L.pos[n.id]);
+    if (L.vertical) {
+      const ys = on.map((n) => L.pos[n.id].y);
+      if (L.seedLanes.includes(l)) ys.push(L.seedY);
+      if (!ys.length) return;
+      el("line", { x1: L.railX(l), x2: L.railX(l), y1: Math.min(...ys) - 22, y2: Math.max(...ys) + 22, class: "rail", "data-lane": l, style: `stroke:${colorOf(l)}` }, gRails);
+      return;
+    }
+    const xs = on.map((n) => L.pos[n.id].x);
     if (L.seedLanes.includes(l)) xs.push(L.seedX);
     if (!xs.length) return;
     el("line", { x1: Math.min(...xs) - 22, x2: Math.max(...xs) + 22, y1: L.railY(l), y2: L.railY(l), class: "rail", "data-lane": l, style: `stroke:${colorOf(l)}` }, gRails);
@@ -888,22 +983,33 @@ function draw() {
     const a = point(e.source, e.target), b = point(e.target, e.source);
     if (!a || !b) return;
     const R = relOf(e.type), d = pathFor(a, b);
-    const g = el("g", { class: `edge-g t-${e.type}`, "data-i": i }, gEdges);
+    const g = el("g", { class: `edge-g t-${e.type}${primary(s) !== primary(t) ? " xl" : ""}`, "data-i": i }, gEdges);
     el("path", { d, class: `edge${e.type === "challenges" ? " challenge" : ""}`, "stroke-width": R.w, "stroke-dasharray": R.dash, "marker-end": R.mk ? `url(#mk-${R.mk})` : null }, g);
     el("path", { d, class: "edge-hit" }, g);
   });
 
   const gSt = el("g", {}, svg);
   // seed interchange
-  const top = L.railY(L.seedLanes[0]) - 17, bot = L.railY(L.seedLanes[L.seedLanes.length - 1]) + 17;
   const gs = el("g", { class: "st seed", tabindex: 0, role: "button", "data-node": seed.id, "aria-label": `${seed.short}, the seed, ${fmtDate(seed.date)}` }, gSt);
-  el("rect", { x: L.seedX - 15, y: top, width: 30, height: bot - top, rx: 15, class: "capsule" }, gs);
-  L.seedLanes.forEach((l) => el("circle", { cx: L.seedX, cy: L.railY(l), r: 5.5, class: "cap-dot", style: `fill:${colorOf(l)}` }, gs));
+  let pillX = L.seedX, pillY = 30;
+  if (L.vertical) {                     // across the threads it touches, at its date
+    const lft = L.railX(L.seedLanes[0]) - 17, rgt = L.railX(L.seedLanes[L.seedLanes.length - 1]) + 17;
+    el("rect", { x: lft, y: L.seedY - 15, width: rgt - lft, height: 30, rx: 15, class: "capsule" }, gs);
+    L.seedLanes.forEach((l) => el("circle", { cx: L.railX(l), cy: L.seedY, r: 5.5, class: "cap-dot", style: `fill:${colorOf(l)}` }, gs));
+    pillX = Math.max(lft, V_GUT) + 4; pillY = L.seedY - 44;
+  } else {
+    const top = L.railY(L.seedLanes[0]) - 17, bot = L.railY(L.seedLanes[L.seedLanes.length - 1]) + 17;
+    el("rect", { x: L.seedX - 15, y: top, width: 30, height: bot - top, rx: 15, class: "capsule" }, gs);
+    L.seedLanes.forEach((l) => el("circle", { cx: L.seedX, cy: L.railY(l), r: 5.5, class: "cap-dot", style: `fill:${colorOf(l)}` }, gs));
+  }
   const pillTxt = `SEED · ${String(seed.short).toUpperCase()} · ${fmtDate(seed.date).toUpperCase()}`;
   const pw = pillTxt.length * 7.3 + 18;
+  // names hidden: the seed's name too
+  const pillShow = state.names ? pillTxt : pillTxt.split(" · ").filter((_, i) => i !== 1).join(" · "), pwShow = pw * pillShow.length / pillTxt.length;
   const gp = el("g", { class: "seed-pill" }, gs);
-  el("rect", { x: L.seedX - pw / 2, y: 30, width: pw, height: 20, rx: 10 }, gp);
-  const pt = el("text", { x: L.seedX, y: 44, "text-anchor": "middle" }, gp); pt.textContent = pillTxt;
+  const pl = L.vertical ? pillX : pillX - pwShow / 2;
+  el("rect", { x: pl, y: pillY, width: pwShow, height: 20, rx: 10 }, gp);
+  const pt = el("text", { x: pl + pwShow / 2, y: pillY + 14, "text-anchor": "middle" }, gp); pt.textContent = pillShow;
 
   nodes.forEach((n) => {
     if (n === seed || !visible(n) || !L.pos[n.id]) return;
@@ -912,14 +1018,43 @@ function draw() {
     if (n.kind === "paper") el("circle", { r, class: "mark" }, g);
     else el("rect", { x: -r + 1, y: -r + 1, width: 2 * r - 2, height: 2 * r - 2, rx: 3.5, class: "mark" }, g);
     if (n.role === "turning-point") el("circle", { r: r - 5, class: "core" }, g);
-    const lines = wrapText(n.short, Math.max(10, Math.floor(L.slot / 7.6)));
-    lines.forEach((ln, i) => { const t = el("text", { x: 0, y: r + 16 + i * 14, class: "nm", "text-anchor": "middle" }, g); t.textContent = ln; });
-    const dt = el("text", { x: 0, y: r + 16 + lines.length * 14, class: "dt", "text-anchor": "middle" }, g);
+    let dt;                             // names hidden: only the date, where the name would start
+    if (L.vertical) {
+      const room = Math.max(6, Math.floor((L.laneW - 22 - r - 18) / 7.3)), nm = String(n.short);
+      if (state.names) { const t = el("text", { x: r + 9, y: 1, class: "nm", "text-anchor": "start" }, g); t.textContent = nm.length > room ? nm.slice(0, room - 1) + "…" : nm; }
+      dt = el("text", { x: r + 9, y: state.names ? 15 : 4, class: "dt", "text-anchor": "start" }, g);
+    } else {
+      const lines = state.names ? wrapText(n.short, Math.max(10, Math.floor(L.slot / 7.6))) : [];
+      lines.forEach((ln, i) => { const t = el("text", { x: 0, y: r + 16 + i * 14, class: "nm", "text-anchor": "middle" }, g); t.textContent = ln; });
+      dt = el("text", { x: 0, y: r + 16 + lines.length * 14, class: "dt", "text-anchor": "middle" }, g);
+    }
     dt.textContent = (n.kind !== "paper" ? n.kind + " · " : "") + fmtDate(n.date);
   });
 
   // sticky lane and force labels
   labels.textContent = "";
+  if (L.vertical) {                     // column heads: the force over its threads, each thread's chip over its column
+    L.groupLeft.forEach(({ g, x, w }) => {
+      if (!g.force) return;
+      const row = document.createElement("div");
+      row.className = "lrow force-row";
+      row.style.left = `${x * scale}px`; row.style.top = `${10 * scale}px`; row.style.width = `${w * scale - 6}px`;
+      row.innerHTML = `<span class="ftag" title="${esc(g.force.name)}">${esc(g.force.id)} · ${esc(g.force.name)}</span>`;
+      labels.appendChild(row);
+    });
+    laneOrder.forEach((l) => {
+      const row = document.createElement("div");
+      row.className = "lrow";
+      row.style.left = `${(L.laneLeft[l] + 4) * scale}px`; row.style.top = `${34 * scale}px`; row.style.width = `${(L.laneW - 10) * scale}px`;
+      const nf = nodes.filter((n) => isBranch(n) && primary(n) === l && (state.blogs || n.kind === "paper")).length;
+      const open = state.allFolded || state.unfold.has(l);
+      const fold = nf ? `<button type="button" class="fold-chip" data-unfold="${esc(l)}" aria-pressed="${open}" title="${open ? "Fold these side branches back into the badge" : "Show the side branches of this line"}">${open ? `Fold ${nf} back` : `+${nf} side branch${nf > 1 ? "es" : ""}`}</button>` : "";
+      row.innerHTML = `<span class="lane-tags"><button type="button" class="lane-chip" data-lane="${esc(l)}" aria-pressed="false" title="${esc(tById[l].question || "")}" style="--c:${colorOf(l)}"><i aria-hidden="true"></i>${esc(tById[l].name)}</button>${fold}</span>`;
+      labels.appendChild(row);
+    });
+    applyState();
+    return;
+  }
   L.groupTop.forEach(({ g, y }) => {
     if (!g.force) return;
     const row = document.createElement("div");
@@ -1014,9 +1149,16 @@ function setSpacer(px) {
   spacer = px;
   if (L) inner.style.width = `${(L.W * scale + spacer).toFixed(0)}px`;
 }
+function scrollDown(p, always) {        // the vertical map: bring a station into the window
+  if (!p || p.y === undefined) return;
+  const top = svg.getBoundingClientRect().top + p.y * scale;
+  if (always || top < 80 || top > window.innerHeight - 80)
+    window.scrollTo({ top: Math.max(0, window.scrollY + top - window.innerHeight / 2), behavior: reduceMotion ? "auto" : "smooth" });
+}
 function keepVisible(id) {
-  const p = id === seed.id ? { x: L.seedX } : L.pos[id];
+  const p = id === seed.id ? { x: L.seedX, y: L.seedY } : L.pos[id];
   if (!p || mapsec.classList.contains("list") || mapsec.classList.contains("off")) return;
+  if (L.vertical) { scrollDown(p); return; }
   const covered = window.innerWidth > 640 && !drawer.hidden ? drawer.offsetWidth : 0;
   setSpacer(covered);
   const view = scroller.clientWidth - covered;
@@ -1031,7 +1173,8 @@ function focusLane(l, reveal) {
 function revealNode(id) {
   setView("map");
   showTab("logic", "map", true);
-  const p = id === seed.id ? { x: L.seedX } : L.pos[id];
+  const p = id === seed.id ? { x: L.seedX, y: L.seedY } : L.pos[id];
+  if (L.vertical) { scrollDown(p, true); return; }
   const covered = window.innerWidth > 640 && !drawer.hidden ? drawer.offsetWidth : 0;
   setSpacer(covered);
   if (p) scroller.scrollTo({ left: Math.max(0, p.x * scale - (scroller.clientWidth - covered) / 2), behavior: reduceMotion ? "auto" : "smooth" });
@@ -1136,6 +1279,12 @@ const setFolded = (show) => { state.allFolded = show; state.unfold.clear(); sync
 $("#f-hide").addEventListener("click", () => setFolded(false));
 $("#f-show").addEventListener("click", () => setFolded(true));
 $("#t-fit").addEventListener("click", () => { state.fit = $("#t-fit").getAttribute("aria-pressed") !== "true"; draw(); });
+const syncLayout = () => { $("#o-v").setAttribute("aria-pressed", String(state.vertical)); $("#o-h").setAttribute("aria-pressed", String(!state.vertical)); $("#t-names").setAttribute("aria-pressed", String(state.names)); };
+const setLayout = (v) => { state.vertical = v; state.fit = null; savePref("tc-map-vertical", v); syncLayout(); scroller.scrollLeft = 0; draw(); updateFades(); };
+$("#o-v").addEventListener("click", () => setLayout(true));
+$("#o-h").addEventListener("click", () => setLayout(false));
+$("#t-names").addEventListener("click", () => { state.names = !state.names; savePref("tc-map-names", state.names); syncLayout(); draw(); });
+syncLayout();
 function setView(v) {
   mapsec.classList.toggle("list", v === "list");
   $("#v-map").setAttribute("aria-pressed", String(v === "map")); $("#v-list").setAttribute("aria-pressed", String(v === "list"));
@@ -1296,7 +1445,7 @@ let mapStale = true, mapSeen = false;   // the map is drawn for the width it has
 function mapShown() {
   if (mapStale) draw();
   // Start with the seed's interchange in view: most of the story happens around it.
-  if (!mapSeen && scroller.scrollWidth > scroller.clientWidth) scroller.scrollLeft = Math.max(0, L.seedX * scale - scroller.clientWidth * 0.32);
+  if (!mapSeen && !L.vertical && scroller.scrollWidth > scroller.clientWidth) scroller.scrollLeft = Math.max(0, L.seedX * scale - scroller.clientWidth * 0.32);
   mapSeen = true;
   updateFades();
 }

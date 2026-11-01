@@ -57,7 +57,7 @@ Each person signs in to the unmodified official tool with their own account. Do 
 | Section | What it answers |
 |---|---|
 | **Mechanism** | The field's goal, its core tension, the enabling insight, and 1–4 **driving forces** (root causes) |
-| **Map** | A transit-style swimlane map. Each coloured line is a *problem thread*, each station is a work placed by date, and the seed is the interchange. Links are typed: resolves, extends, inspired, challenges, competes, applies, explains |
+| **Map** | A transit-style map. Each coloured line is a *problem thread*, each station is a work placed by date, and the seed is the interchange. Time runs down the page, one column per thread (years without works take little room; links between threads stay faint until a station or a thread is picked); *Layout: Horizontal* lays it across, in rows. *Names* hides every work's name, the seed's included, for a picture to share. Both choices are remembered in the browser. Links are typed: resolves, extends, inspired, challenges, competes, applies, explains |
 | **Threads** | The threads listed by driving force; pick one to read its **why-ladder** from the top: the symptom researchers saw, then "why?" asked until it reaches a root no paper can change |
 | **Story** | A newcomer's narrative that links back into the map, plus knock-on effects (fixing one problem created another) and open problems |
 | **What's next** | Who is working on what in the last 12 months; the open questions, each with its closest attempts and the experiment that would settle it; and the assumptions most works share. It does not predict a new paradigm: the shared assumptions are where one would start looking |

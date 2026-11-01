@@ -51,7 +51,7 @@ You need Python 3.9 or newer and no extra packages. Runs bill your Claude or Cha
 
 *The map with side branches expanded. Click the image to view it at full size.*
 
-**Map.** Each coloured line is a problem thread and each station a work, placed by date. The seed is the tall interchange every line passes through. Links run from earlier to later work and say what kind they are: resolves, extends, inspired, competes, applies, explains (challenges in red). Side branches are folded into the "+N" badge on their line; *Show* unfolds them. Hover a station for a summary; click it for its card: what it inherits, its move, its key insight, what it leaves open, and the works before and after it. *List* shows the same works as a table.
+**Map.** Each coloured line is a problem thread and each station a work, placed by date. Time runs down the page, one column per thread, so the map stays narrow enough to read on a phone or share as one image (*Layout: Horizontal* lays it across instead). The seed is the interchange every line passes through. *Names* hides the works' names, the seed's too, for a picture you can share. Links run from earlier to later work and say what kind they are: resolves, extends, inspired, competes, applies, explains (challenges in red). Side branches are folded into the "+N" badge on their line; *Show* unfolds them. Hover a station for a summary; click it for its card: what it inherits, its move, its key insight, what it leaves open, and the works before and after it. *List* shows the same works as a table.
 
 <p align="center">
   <a href="images/5.png"><img src="images/5.png" alt="Threads" width="900"></a>

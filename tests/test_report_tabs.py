@@ -199,6 +199,25 @@ class BrowserTest(unittest.TestCase):
             self.assertEqual(self.shown(q), ["logic", "mechanism", ["mechanism"]])
         self.assertEqual(self.js(q, "() => document.querySelectorAll('[data-tab=quality]').length"), 0)
 
+    def test_the_map_runs_down_the_page_and_its_names_can_be_hidden(self):
+        p = self.open(with_v2(BASE), "map-vertical", width=900, hash_="#logic/map")
+        box = lambda: self.js(p, "() => { const b = document.getElementById('mapsvg').getBoundingClientRect(); return [b.width, b.height]; }")  # noqa: E731
+        self.assertIn("vert", self.js(p, "() => document.getElementById('mapsvg').getAttribute('class')"))   # vertical first
+        w, h = box()
+        self.assertLessEqual(w, 900)                                    # one column per thread: it fits the window
+        names = "() => document.querySelectorAll('#mapsvg .st .nm').length"
+        self.assertGreater(self.js(p, names), 0)
+        p.click("#t-names")                                             # names hidden: the seed's too
+        self.assertEqual(self.js(p, names), 0)
+        self.assertNotIn(self.js(p, "() => document.querySelector('.seed-pill text').textContent"), "")
+        self.assertEqual(self.js(p, "() => document.querySelector('.seed-pill text').textContent.split(' · ').length"), 2)
+        p.click("#o-h")                                                 # across, as before
+        self.assertNotIn("vert", self.js(p, "() => document.getElementById('mapsvg').getAttribute('class') || ''"))
+        self.assertEqual(self.js(p, "() => [localStorage.getItem('tc-map-vertical'), localStorage.getItem('tc-map-names')]"), ["0", "0"])
+        p.click("#mapsvg .st[data-node=a] .mark")                       # a station still opens its card
+        self.assertFalse(self.js(p, "() => document.getElementById('drawer').hidden"))
+        self.assertEqual(self.errors, [])
+
     def test_a_work_named_in_the_story_opens_where_you_are(self):
         g = json.loads(json.dumps(with_v2(BASE)))
         g["story"] = {"title": "T", "paragraphs": ["It started with [[a]]."]}
